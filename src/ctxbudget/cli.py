@@ -20,6 +20,7 @@ from .dupes import find_duplicates
 from .parse import parse_tool_dump, read_json
 from .ratio import measurement_from_compactions, ratio_payload, render_ratio_markdown
 from .retention import plan_retention
+from .worktrees import render_worktrees_markdown, scan_worktrees
 from .report import (
     disk_payload,
     reclaim_payload,
@@ -32,7 +33,7 @@ from .report import (
     render_reclaim_markdown,
 )
 
-VERSION = "0.10.0"
+VERSION = "0.11.0"
 
 
 def build_parser():
@@ -228,6 +229,14 @@ def build_parser():
             "trigger this client actually used"
         ),
     )
+    parser.add_argument(
+        "--worktrees",
+        action="store_true",
+        help=(
+            "reconcile git worktree registrations under PATH with the agent state "
+            "keyed by those checkouts; read-only, never prunes (own mode)"
+        ),
+    )
     parser.add_argument("--version", action="version", version="ctxbudget " + VERSION)
     return parser
 
@@ -354,6 +363,25 @@ def main(argv=None):
     if args.per_turn is not None and args.per_turn <= 0:
         sys.stderr.write("ctxbudget: --per-turn must be positive\n")
         return 2
+    if args.worktrees:
+        conflicts = [
+            name
+            for name, active in (
+                ("--disk", args.disk),
+                ("--reclaim", bool(args.reclaim)),
+                ("--diff", bool(args.diff)),
+                ("--postcompact", bool(args.postcompact)),
+                ("--ratio", args.ratio),
+                ("--receipt", bool(args.receipt)),
+            )
+            if active
+        ]
+        if conflicts:
+            sys.stderr.write(
+                "ctxbudget: --worktrees is its own mode and cannot be combined with %s\n"
+                % ", ".join(conflicts)
+            )
+            return 2
     if args.ratio:
         if any([args.disk, args.reclaim, args.diff, args.postcompact]):
             sys.stderr.write(
@@ -470,6 +498,20 @@ def main(argv=None):
             "(scan mode prints the absolute root by design)\n"
         )
         return 2
+
+    if args.worktrees:
+        worktree_root = os.path.abspath(os.path.expanduser(args.path))
+        if not os.path.isdir(worktree_root):
+            sys.stderr.write("ctxbudget: %s is not a directory\n" % args.path)
+            return 2
+        payload = scan_worktrees(worktree_root, home=args.home)
+        output = (
+            json.dumps(payload, indent=2, ensure_ascii=False)
+            if args.json
+            else render_worktrees_markdown(payload)
+        )
+        sys.stdout.write(output + "\n")
+        return 0
 
     if args.disk:
         home = os.path.abspath(os.path.expanduser(args.home or "~"))

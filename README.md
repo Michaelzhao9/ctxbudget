@@ -18,6 +18,7 @@ Agent clients inject instruction files, skill descriptions, and MCP tool schemas
 - Report retention schedules and files already past their claimed window.
 - Read Claude Code compaction receipts and compare declared versus measured windows.
 - Reclaim SQLite space only through an explicit, verified `--apply` path.
+- Reconcile git worktree registrations with the agent state keyed by those checkouts, without pruning either side.
 
 ## Install
 
@@ -101,6 +102,21 @@ ctxbudget --diff before.json after.json --top 10
 
 The comparison refuses incompatible receipt types and reports when a redacted home prevents machine-identity validation.
 
+## Worktree reconciliation
+
+```bash
+ctxbudget --worktrees ~/Desktop/Code
+ctxbudget --worktrees ~/Desktop/Code --json
+```
+
+A checkout can disappear while two independent records of it survive: git's registration (`.git/worktrees/<id>/gitdir`, plus `.git/worktrees/<id>/locked`) and the agent state keyed by the checkout's absolute path (`~/.claude/projects/<key>`, where every character outside `[A-Za-z0-9-]` in the path becomes `-`). `--worktrees` reads both sides and reports them next to each other. It does not shell out to `git`, and it never moves, deletes, or prunes anything.
+
+Registry entries are classified as `present`, `path_absent` (the parent directory is readable, so the checkout is gone), `unreachable` (an ancestor above the parent is missing, so the checkout may still exist), `foreign` (something else is at that path), or locked with its recorded reason. State keys are classified as `state_without_checkout` (the key resolves under a scanned worktree base and no registration mentions it) or `state_unrooted` (the repository itself is outside the scan, so only the key is evidence).
+
+Each repository gets one verdict word, and the word never claims more than was measured: `registration_without_checkout` for a checkout that is provably gone, `unverifiable` when any registration could not be probed at all, then `state_without_checkout`, `foreign_path`, `clean`, or `no_registry`.
+
+The encoded key cannot be decoded backwards: a hyphen may stand for a hyphen, a dot, or a slash, so every real child directory is encoded forward and compared instead of guessing the original path. The key is the fact; the reconstructed root is printed as a hint.
+
 ## Compaction and declared windows
 
 ```bash
@@ -167,7 +183,7 @@ Every human and JSON report includes the tokenizer name and whether the result i
 uv run --with pytest pytest -q
 ```
 
-The suite covers context discovery and pricing, duplicate detection, selectors and budget exits, disk receipts and diffs, redaction, SQLite soft-delete inspection and verified reclaim, retention reporting, compaction receipts, and declared-versus-measured window comparisons.
+The suite covers context discovery and pricing, duplicate detection, selectors and budget exits, disk receipts and diffs, redaction, SQLite soft-delete inspection and verified reclaim, retention reporting, compaction receipts, declared-versus-measured window comparisons, and worktree/state reconciliation (real `git worktree` fixtures, including a deleted checkout and a locked one).
 
 ## Limitations
 
@@ -178,6 +194,8 @@ The suite covers context discovery and pricing, duplicate detection, selectors a
 - Retention checks use file modification time and may differ from a product's internal policy.
 - Compaction and window readers currently understand Claude Code receipt shapes.
 - Disk size labels use binary divisors; exact byte counts are included where relevant.
+- `--worktrees` reconciles only repositories reachable from the scanned path; state whose repository is outside that path is reported as unrooted, never as orphaned.
+- In `--worktrees`, the agent-state key is authoritative and the reconstructed checkout path is a hint: the encoding is not reversible when a path contains hyphens, dots, or spaces.
 
 ## License
 
