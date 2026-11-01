@@ -1,0 +1,135 @@
+{
+  "filesystem": [
+    {
+      "name": "read_file",
+      "description": "Read the complete contents of a file from the file system.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute path"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "write_file",
+      "description": "Create a new file or overwrite an existing file with new contents.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute path"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "list_directory",
+      "description": "List the contents of a directory, returning names and types.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "search_files",
+      "description": "Recursively search for files and directories matching a pattern.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "pattern": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "move_file",
+      "description": "Move or rename files and directories.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "destination": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ],
+  "github": [
+    {
+      "name": "create_issue",
+      "description": "Create a new issue in a GitHub repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "list_pull_requests",
+      "description": "List pull requests for a repository, optionally filtered by state.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_file_contents",
+      "description": "Get the contents of a file or directory from a GitHub repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute path"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  ]
+}
