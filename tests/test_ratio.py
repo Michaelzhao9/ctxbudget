@@ -338,3 +338,123 @@ def test_a_diverging_median_still_reports_the_count_it_is_based_on():
     assert payload["divergence"]["within_tolerance"] == 0
     assert payload["divergence"]["boundaries_counted"] == 4
     assert not any("median lands inside" in note for note in payload["notes"])
+
+
+def _uneven_population():
+    """A trigger group whose median population and pair population differ.
+
+    Five boundaries exist: four carry ``auto`` and one carries no trigger; three
+    of the four ``auto`` rows also carry ``postTokens``. Any sentence that puts
+    one of those counts next to a median taken over another is a false statement.
+    """
+    return {
+        "median_pre": 925_000,
+        "boundaries": 4,
+        "boundaries_total": 5,
+        "boundaries_with_post": 3,
+        "root": "~/projects",
+        "by_trigger": {
+            "auto": {
+                "boundaries": 4,
+                "median_pre": 925_000,
+                "min_pre": 200_000,
+                "max_pre": 1_000_000,
+            },
+            "unrecorded": {
+                "boundaries": 1,
+                "median_pre": 250_000,
+                "min_pre": 250_000,
+                "max_pre": 250_000,
+            },
+        },
+        "pre_by_trigger": {"auto": [900_000, 950_000, 1_000_000, 200_000]},
+        "pairs_by_trigger": {"auto": 3},
+    }
+
+
+def test_the_group_median_names_the_population_it_was_taken_over():
+    payload = ratio_payload(
+        per_turn=189, window=1_000_000, trigger=0.9, measurement=_uneven_population()
+    )
+
+    measured = payload["measured"]
+    assert measured["boundaries"] == 4  # median over every auto row that has pre
+    assert measured["group_boundaries"] == 4
+    assert measured["boundaries_total"] == 5
+
+    text = render_ratio_markdown(payload)
+    assert "over 4 boundaries" in text
+    assert "4 of 3" not in text
+
+
+def _uneven_receipts():
+    """The same population, extracted from receipts rather than hand-built."""
+    return measurement_from_compactions(
+        {
+            "root": "~/projects",
+            "window": {
+                "median_pre": 950_000,
+                "by_trigger": {
+                    "auto": {"boundaries": 4, "median_pre": 925_000},
+                    "unrecorded": {"boundaries": 1, "median_pre": 250_000},
+                },
+            },
+            "totals": {"with_pre_and_post": 3},
+            "boundaries": [
+                {"pre": 900_000, "post": 90_000, "trigger": "auto"},
+                {"pre": 950_000, "post": 95_000, "trigger": "auto"},
+                {"pre": 1_000_000, "post": 100_000, "trigger": "auto"},
+                {"pre": 200_000, "post": None, "trigger": "auto"},
+                {"pre": 250_000, "post": None, "trigger": None},
+            ],
+        }
+    )
+
+
+def test_the_group_share_never_claims_more_boundaries_than_exist():
+    text = render_ratio_markdown(
+        ratio_payload(
+            per_turn=189,
+            window=1_000_000,
+            trigger=0.9,
+            measurement=_uneven_receipts(),
+        )
+    )
+    line = next(line for line in text.splitlines() if "trigger group:" in line)
+    share = line.split("—")[1].split("boundar")[0].strip()
+    counted, total = (int(part) for part in share.split(" of "))
+    assert counted <= total
+
+
+def test_rows_without_a_post_count_say_so_when_the_count_uses_them():
+    text = render_ratio_markdown(
+        ratio_payload(
+            per_turn=189,
+            window=1_000_000,
+            trigger=0.9,
+            measurement=_uneven_population(),
+        )
+    )
+
+    assert "3 of those 4" in text  # pairs among the counted population
+    even = render_ratio_markdown(
+        ratio_payload(
+            per_turn=189, window=1_000_000, trigger=0.9, measurement=_tolerance_measurement()
+        )
+    )
+    assert "carry postTokens" not in even  # equal populations need no caveat
+
+
+def test_a_hand_built_measurement_does_not_invent_a_pair_count():
+    payload = ratio_payload(
+        per_turn=189,
+        window=1_000_000,
+        trigger=0.9,
+        measurement={"median_pre": 910_000, "boundaries": 4, "root": "~/projects"},
+    )
+
+    assert payload["measured"]["boundaries_with_post"] is None
+    assert payload["measured"]["boundaries_total"] is None
+    text = render_ratio_markdown(payload)
+    assert "carry postTokens" not in text
+    assert "over 4 boundaries" in text  # the given population is the only one known

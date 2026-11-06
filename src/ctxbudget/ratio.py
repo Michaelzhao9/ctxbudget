@@ -54,6 +54,7 @@ def measurement_from_compactions(payload):
     if not median_pre:
         return None
     pre_by_trigger = {}
+    pairs_by_trigger = {}
     for row in (payload.get("boundaries") or []):
         pre = (row or {}).get("pre")
         if pre is None:
@@ -61,12 +62,17 @@ def measurement_from_compactions(payload):
         trigger = row.get("trigger")
         label = trigger if isinstance(trigger, str) and trigger else "unrecorded"
         pre_by_trigger.setdefault(label, []).append(pre)
+        if row.get("post") is not None:
+            pairs_by_trigger[label] = pairs_by_trigger.get(label, 0) + 1
     return {
         "median_pre": median_pre,
         "boundaries": ((payload.get("totals") or {}).get("with_pre_and_post") or 0),
+        "boundaries_with_post": ((payload.get("totals") or {}).get("with_pre_and_post")),
+        "boundaries_total": sum(len(values) for values in pre_by_trigger.values()) or None,
         "root": payload.get("root"),
         "by_trigger": window.get("by_trigger") or {},
         "pre_by_trigger": pre_by_trigger,
+        "pairs_by_trigger": pairs_by_trigger,
     }
 
 
@@ -128,7 +134,29 @@ def ratio_payload(
             mixture = by_trigger
         measured = {
             "median_pre": int(group["median_pre"]) if group else int(measurement["median_pre"]),
-            "boundaries": int(measurement.get("boundaries") or 0),
+            "boundaries": int(group["boundaries"])
+            if group
+            else int(measurement.get("boundaries") or 0),
+            # Every group count is known even when the payload never stated a
+            # total, so the sum is a measurement rather than a guess.
+            "boundaries_total": (
+                int(measurement["boundaries_total"])
+                if measurement.get("boundaries_total") is not None
+                else (
+                    sum(int(g.get("boundaries") or 0) for g in by_trigger.values())
+                    if by_trigger
+                    else None
+                )
+            ),
+            "boundaries_with_post": (
+                (measurement.get("pairs_by_trigger") or {}).get(label)
+                if group
+                else (
+                    int(measurement["boundaries_with_post"])
+                    if measurement.get("boundaries_with_post") is not None
+                    else None
+                )
+            ),
             "root": measurement.get("root"),
             "basis": "median preTokens across the compaction receipts that carry it",
             "trigger": label,
@@ -300,7 +328,9 @@ def render_ratio_markdown(payload):
                     % (
                         measured["trigger"],
                         _thousands(measured.get("group_boundaries")),
-                        _thousands(measured["boundaries"]),
+                        _thousands(
+                            measured.get("boundaries_total") or measured["boundaries"]
+                        ),
                     )
                 )
                 if others:
@@ -329,6 +359,14 @@ def render_ratio_markdown(payload):
                 "- the declared window (%s tokens) is below that median, so the "
                 "declared share describes a budget the client is not using"
                 % _thousands(declared["window"])
+            )
+        paired = measured.get("boundaries_with_post")
+        if paired is not None and paired < measured["boundaries"]:
+            lines.append(
+                "- %s of those %s boundaries also carry postTokens; the count below uses "
+                "every boundary with preTokens, while the surviving-window numbers use "
+                "only the pairs"
+                % (_thousands(paired), _thousands(measured["boundaries"]))
             )
         if payload.get("divergence"):
             divergence = payload["divergence"]

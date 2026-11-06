@@ -135,6 +135,8 @@ The measured side is grouped by the `trigger` each compaction receipt carries be
 
 A median is one boundary out of the population, so `--ratio` also counts the boundaries inside the same ±tolerance band it judges the median by. A `threshold_confirmed` with `51 of 85` in the band is a statement about the middle of the distribution; the count is what says how much of the population the declaration actually describes.
 
+Those three numbers come from three different populations and are printed as such: `boundaries` is the population the median and the band count were taken over (every receipt in the chosen trigger group, including ones with no `postTokens`), `boundaries_total` is every receipt that carries a `preTokens` at all, and `boundaries_with_post` is how many of the counted population also carry a post-compaction size. When a receipt records `preTokens` without `postTokens` the report says how many of the counted boundaries are in that position instead of quoting the median beside a pair count it was never computed from.
+
 ## SQLite reclaim
 
 Dry-run is the default:

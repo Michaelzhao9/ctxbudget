@@ -5,6 +5,7 @@ import json
 import os
 import sys
 
+from . import __version__
 from .diff import diff_receipts, load_receipt
 from .compact import attach_turn_cost, scan_compactions
 from .discover import Scan, scan
@@ -33,7 +34,10 @@ from .report import (
     render_reclaim_markdown,
 )
 
-VERSION = "0.12.0"
+# One release number lives in ``pyproject.toml`` and ``__init__.__version__``;
+# a third literal here has already drifted once (the CLI printed 0.12.0 while the
+# package was 0.13.0), so this name reads the package instead of restating it.
+VERSION = __version__
 
 
 def build_parser():

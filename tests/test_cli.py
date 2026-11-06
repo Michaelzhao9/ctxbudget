@@ -1,14 +1,32 @@
 import json
+import re
+from pathlib import Path
 
 import pytest
 
 import ctxbudget
+from ctxbudget import cli
 
 from ctxbudget.cli import main
 
 
 def test_package_version_matches_release_metadata():
-    assert ctxbudget.__version__ == "0.13.0"
+    """A release is one number in three places, or it is three numbers."""
+    root = Path(__file__).resolve().parents[1]
+    declared = re.search(
+        r'^version = "([^"]+)"', (root / "pyproject.toml").read_text(encoding="utf-8"), re.MULTILINE
+    ).group(1)
+
+    assert ctxbudget.__version__ == declared
+    assert cli.VERSION == ctxbudget.__version__
+
+
+def test_the_version_flag_prints_the_version_the_package_reports(capsys):
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--version"])
+
+    assert exit_info.value.code == 0
+    assert capsys.readouterr().out.strip() == "ctxbudget %s" % ctxbudget.__version__
 
 
 def write(path, text):
