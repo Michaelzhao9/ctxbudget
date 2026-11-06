@@ -33,7 +33,7 @@ from .report import (
     render_reclaim_markdown,
 )
 
-VERSION = "0.11.0"
+VERSION = "0.12.0"
 
 
 def build_parser():

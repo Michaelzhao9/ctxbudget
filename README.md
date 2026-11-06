@@ -131,6 +131,8 @@ ctxbudget --ratio \
 
 `--postcompact` reads only compaction metadata fields. `--ratio` requires a declared window, prints both sides of each ratio, and refuses to infer a model window from its name.
 
+The measured side is grouped by the `trigger` each compaction receipt carries before any median is taken. A declared trigger fraction can only describe an automatic compaction, so `--ratio` compares against the `auto` group and prints the other groups beside it instead of averaging them in; two or more trigger values with no `auto` refuse the comparison (`mixed_triggers`) rather than measure a population nobody configured. When the receipts carry a single trigger value the grouping cannot move the median, and the report says so.
+
 ## SQLite reclaim
 
 Dry-run is the default:

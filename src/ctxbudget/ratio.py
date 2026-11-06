@@ -57,7 +57,30 @@ def measurement_from_compactions(payload):
         "median_pre": median_pre,
         "boundaries": ((payload.get("totals") or {}).get("with_pre_and_post") or 0),
         "root": payload.get("root"),
+        "by_trigger": window.get("by_trigger") or {},
     }
+
+
+AUTO_TRIGGER = "auto"
+
+
+def choose_trigger_group(by_trigger):
+    """Return ``(label, group)`` for the population a declared trigger configures.
+
+    ``auto`` is the only trigger a declared fraction can describe: a manual
+    ``/compact`` is a user decision, not a threshold firing. When no ``auto``
+    group exists and every boundary shares one trigger, that single group is
+    used and its label is printed. Two or more groups with no ``auto`` are a
+    mixture, and a declared trigger is not compared against a mixture.
+    """
+    if not by_trigger:
+        return None, None
+    if AUTO_TRIGGER in by_trigger:
+        return AUTO_TRIGGER, by_trigger[AUTO_TRIGGER]
+    if len(by_trigger) == 1:
+        label = next(iter(by_trigger))
+        return label, by_trigger[label]
+    return None, None
 
 
 def ratio_payload(
@@ -88,12 +111,20 @@ def ratio_payload(
     }
 
     measured = None
+    mixture = None
     if measurement and measurement.get("median_pre"):
+        by_trigger = measurement.get("by_trigger") or {}
+        label, group = choose_trigger_group(by_trigger)
+        if by_trigger and label is None:
+            mixture = by_trigger
         measured = {
-            "median_pre": int(measurement["median_pre"]),
+            "median_pre": int(group["median_pre"]) if group else int(measurement["median_pre"]),
             "boundaries": int(measurement.get("boundaries") or 0),
             "root": measurement.get("root"),
             "basis": "median preTokens across the compaction receipts that carry it",
+            "trigger": label,
+            "group_boundaries": int(group["boundaries"]) if group else None,
+            "by_trigger": by_trigger,
         }
     elif measurement:
         notes.append(
@@ -104,6 +135,20 @@ def ratio_payload(
     divergence = None
     if measured is None:
         verdict = "no_measurement"
+    elif mixture is not None and threshold_tokens is not None:
+        verdict = "mixed_triggers"
+        notes.append(
+            "the receipts carry more than one trigger value and none is %r, so the "
+            "declared trigger is not compared against a mixture: %s"
+            % (
+                AUTO_TRIGGER,
+                "; ".join(
+                    "%s median %s over %d boundary(ies)"
+                    % (label, _thousands(group["median_pre"]), group["boundaries"])
+                    for label, group in sorted(mixture.items())
+                ),
+            )
+        )
     elif measured["median_pre"] > window:
         verdict = "window_below_measured"
         notes.append(
@@ -210,6 +255,45 @@ def render_ratio_markdown(payload):
                 measured["root"],
             )
         )
+        by_trigger = measured.get("by_trigger") or {}
+        if by_trigger:
+            others = [
+                "`%s` %s over %s"
+                % (label, _thousands(group["median_pre"]), _thousands(group["boundaries"]))
+                for label, group in sorted(by_trigger.items())
+                if label != measured.get("trigger")
+            ]
+            if measured.get("trigger") is not None:
+                lines.append(
+                    "- trigger group: `%s` — %s of %s boundary(ies); this is the population "
+                    "the declared trigger is compared with"
+                    % (
+                        measured["trigger"],
+                        _thousands(measured.get("group_boundaries")),
+                        _thousands(measured["boundaries"]),
+                    )
+                )
+                if others:
+                    lines.append(
+                        "- other triggers: %s — printed, not averaged into the comparison"
+                        % "; ".join(others)
+                    )
+                else:
+                    lines.append(
+                        "- only one trigger value is recorded in these receipts, so this "
+                        "grouping cannot move the median; a manual `/compact` would land in "
+                        "its own group"
+                    )
+            else:
+                lines.append(
+                    "- trigger group: %s values and none is `%s`, so no declared trigger is "
+                    "compared with a mixture — %s"
+                    % (
+                        len(by_trigger),
+                        AUTO_TRIGGER,
+                        "; ".join(others),
+                    )
+                )
         if payload["verdict"] == "window_below_measured":
             lines.append(
                 "- the declared window (%s tokens) is below that median, so the "

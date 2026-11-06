@@ -110,6 +110,27 @@ def scan_compactions(root, max_files=MAX_FILES) -> dict:
     post_pairs_pre = [r["pre"] for r in with_both]
     notes: List[str] = []
 
+    # A median over every boundary mixes two regimes whenever the receipts carry
+    # more than one trigger: an automatic compaction is what a declared trigger
+    # fraction configures, a manual one is a user decision. Group before taking
+    # any median, so a caller can pick the population it is asking about.
+    groups: dict = {}
+    for row in rows:
+        if row["pre"] is None:
+            continue
+        trigger = row["trigger"]
+        label = trigger if isinstance(trigger, str) and trigger else "unrecorded"
+        groups.setdefault(label, []).append(row["pre"])
+    by_trigger = {
+        label: {
+            "boundaries": len(values),
+            "median_pre": _whole(statistics.median(values)),
+            "min_pre": min(values),
+            "max_pre": max(values),
+        }
+        for label, values in sorted(groups.items())
+    }
+
     if not rows:
         notes.append(
             "no compaction receipts under %d file(s) scanned: every ratio is "
@@ -142,6 +163,7 @@ def scan_compactions(root, max_files=MAX_FILES) -> dict:
             "median_post": _whole(statistics.median(post_values)) if post_values else None,
             "min_post": min(post_values) if post_values else None,
             "max_post": max(post_values) if post_values else None,
+            "by_trigger": by_trigger,
             "basis": "median of the surviving window, rounded to a whole token",
         },
         "verdict": (

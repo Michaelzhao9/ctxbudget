@@ -8,7 +8,7 @@ from ctxbudget.cli import main
 
 
 def test_package_version_matches_release_metadata():
-    assert ctxbudget.__version__ == "0.11.0"
+    assert ctxbudget.__version__ == "0.12.0"
 
 
 def write(path, text):

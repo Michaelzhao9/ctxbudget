@@ -123,3 +123,30 @@ def test_malformed_lines_and_foreign_records_are_skipped_not_fatal(tmp_path):
     assert payload["coverage"]["files_scanned"] == 1
     assert payload["coverage"]["files_with_boundaries"] == 1
     assert payload["survival"]["median"] == 0.1
+
+
+def test_boundaries_are_grouped_by_the_trigger_that_wrote_them(tmp_path):
+    write_session(
+        tmp_path / "a.jsonl",
+        [
+            boundary(pre=900_000, post=10_000, trigger="auto"),
+            boundary(pre=920_000, post=11_000, trigger="auto"),
+            boundary(pre=200_000, post=9_000, trigger="manual"),
+            boundary(pre=300_000, post=8_000, trigger=None),
+        ],
+    )
+
+    payload = scan_compactions(tmp_path)
+    groups = payload["window"]["by_trigger"]
+
+    assert set(groups) == {"auto", "manual", "unrecorded"}
+    assert groups["auto"]["boundaries"] == 2
+    assert groups["auto"]["median_pre"] == 910_000
+    assert groups["manual"] == {
+        "boundaries": 1,
+        "median_pre": 200_000,
+        "min_pre": 200_000,
+        "max_pre": 200_000,
+    }
+    # the global median is still the mixture, so a caller can tell them apart
+    assert payload["window"]["median_pre"] == 600_000
