@@ -257,3 +257,84 @@ def test_a_single_trigger_value_says_the_grouping_cannot_move_the_median():
     text = render_ratio_markdown(payload)
     assert "only one trigger value" in text
     assert "85 of 85" in text
+
+
+def _tolerance_measurement():
+    """A group whose median sits inside the band while a quarter of it does not."""
+    return {
+        "median_pre": 910_000,
+        "boundaries": 4,
+        "root": "~/projects",
+        "by_trigger": {
+            "auto": {
+                "boundaries": 4,
+                "median_pre": 910_000,
+                "min_pre": 850_000,
+                "max_pre": 1_300_000,
+            }
+        },
+        "pre_by_trigger": {"auto": [850_000, 870_000, 950_000, 1_300_000]},
+    }
+
+
+def test_measurement_keeps_per_boundary_pre_values_grouped_by_trigger():
+    measurement = measurement_from_compactions(
+        {
+            "window": {"median_pre": 600_000, "by_trigger": {}},
+            "totals": {"with_pre_and_post": 3},
+            "root": "~/projects",
+            "boundaries": [
+                {"pre": 910_000, "post": 100_000, "trigger": "auto"},
+                {"pre": 930_000, "post": 90_000, "trigger": "auto"},
+                {"pre": 200_000, "post": 20_000, "trigger": "manual"},
+                {"pre": 300_000, "post": 30_000, "trigger": None},
+            ],
+        }
+    )
+
+    assert measurement["pre_by_trigger"]["auto"] == [910_000, 930_000]
+    assert measurement["pre_by_trigger"]["manual"] == [200_000]
+    assert measurement["pre_by_trigger"]["unrecorded"] == [300_000]
+
+
+def test_a_confirmed_median_reports_how_many_boundaries_agree():
+    payload = ratio_payload(
+        per_turn=189,
+        window=1_000_000,
+        trigger=0.9,
+        measurement=_tolerance_measurement(),
+    )
+
+    assert payload["verdict"] == "threshold_confirmed"
+    divergence = payload["divergence"]
+    assert divergence["within_tolerance"] == 3
+    assert divergence["boundaries_counted"] == 4
+    assert any("3 of 4" in note for note in payload["notes"])
+
+    text = render_ratio_markdown(payload)
+    assert "3 of 4" in text
+    assert "1,300,000" not in text  # the outlier is counted, not enumerated
+
+
+def test_a_count_is_absent_rather_than_invented_when_the_values_are_missing():
+    measurement = {"median_pre": 910_000, "boundaries": 4, "root": "~/projects"}
+    payload = ratio_payload(
+        per_turn=189, window=1_000_000, trigger=0.9, measurement=measurement
+    )
+
+    assert payload["divergence"]["within_tolerance"] is None
+    assert payload["divergence"]["boundaries_counted"] is None
+    assert not any("of 4" in note for note in payload["notes"])
+    text = render_ratio_markdown(payload)
+    assert "within" not in text
+
+
+def test_a_diverging_median_still_reports_the_count_it_is_based_on():
+    payload = ratio_payload(
+        per_turn=189, window=1_000_000, trigger=0.7, measurement=_tolerance_measurement()
+    )
+
+    assert payload["verdict"] == "threshold_diverges"  # 700,000 vs 910,000
+    assert payload["divergence"]["within_tolerance"] == 0
+    assert payload["divergence"]["boundaries_counted"] == 4
+    assert not any("median lands inside" in note for note in payload["notes"])

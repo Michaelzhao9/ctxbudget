@@ -133,6 +133,8 @@ ctxbudget --ratio \
 
 The measured side is grouped by the `trigger` each compaction receipt carries before any median is taken. A declared trigger fraction can only describe an automatic compaction, so `--ratio` compares against the `auto` group and prints the other groups beside it instead of averaging them in; two or more trigger values with no `auto` refuse the comparison (`mixed_triggers`) rather than measure a population nobody configured. When the receipts carry a single trigger value the grouping cannot move the median, and the report says so.
 
+A median is one boundary out of the population, so `--ratio` also counts the boundaries inside the same ±tolerance band it judges the median by. A `threshold_confirmed` with `51 of 85` in the band is a statement about the middle of the distribution; the count is what says how much of the population the declaration actually describes.
+
 ## SQLite reclaim
 
 Dry-run is the default:

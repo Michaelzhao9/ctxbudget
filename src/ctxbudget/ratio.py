@@ -53,11 +53,20 @@ def measurement_from_compactions(payload):
     median_pre = window.get("median_pre")
     if not median_pre:
         return None
+    pre_by_trigger = {}
+    for row in (payload.get("boundaries") or []):
+        pre = (row or {}).get("pre")
+        if pre is None:
+            continue
+        trigger = row.get("trigger")
+        label = trigger if isinstance(trigger, str) and trigger else "unrecorded"
+        pre_by_trigger.setdefault(label, []).append(pre)
     return {
         "median_pre": median_pre,
         "boundaries": ((payload.get("totals") or {}).get("with_pre_and_post") or 0),
         "root": payload.get("root"),
         "by_trigger": window.get("by_trigger") or {},
+        "pre_by_trigger": pre_by_trigger,
     }
 
 
@@ -170,6 +179,27 @@ def ratio_payload(
             "relative": relative,
             "tolerance": tolerance,
         }
+        # A median is one boundary out of the population. Count the boundaries
+        # that actually fall inside the same band the median is judged by, so a
+        # confirmation cannot hide a bimodal group behind its middle value.
+        values = ((measurement or {}).get("pre_by_trigger") or {}).get(
+            measured.get("trigger")
+        )
+        if values:
+            band = tolerance * threshold_tokens
+            within = sum(1 for value in values if abs(value - threshold_tokens) <= band)
+            divergence["within_tolerance"] = within
+            divergence["boundaries_counted"] = len(values)
+            if within < len(values) and abs(relative) <= tolerance:
+                notes.append(
+                    "the median lands inside the tolerance band, but only %d of %d "
+                    "boundaries do: the declared trigger describes the middle of this "
+                    "population, not all of it"
+                    % (within, len(values))
+                )
+        else:
+            divergence["within_tolerance"] = None
+            divergence["boundaries_counted"] = None
         verdict = (
             "threshold_confirmed"
             if abs(relative) <= tolerance
@@ -325,6 +355,20 @@ def render_ratio_markdown(payload):
                     ),
                 ]
             )
+            if divergence.get("within_tolerance") is not None:
+                lines.append(
+                    "- within %s of the declared trigger: **%d of %d** boundaries (%s) — "
+                    "the median is one boundary, this count is the population"
+                    % (
+                        _pct1(divergence["tolerance"]),
+                        divergence["within_tolerance"],
+                        divergence["boundaries_counted"],
+                        share_text(
+                            divergence["within_tolerance"]
+                            / divergence["boundaries_counted"]
+                        ),
+                    )
+                )
 
     if payload.get("notes"):
         lines.extend(["", "Notes:"])
