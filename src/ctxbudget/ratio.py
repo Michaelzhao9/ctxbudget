@@ -132,8 +132,14 @@ def ratio_payload(
         label, group = choose_trigger_group(by_trigger)
         if by_trigger and label is None:
             mixture = by_trigger
+        median_pre = int(group["median_pre"]) if group else int(measurement["median_pre"])
         measured = {
-            "median_pre": int(group["median_pre"]) if group else int(measurement["median_pre"]),
+            "median_pre": median_pre,
+            # The one division a reader would otherwise do by hand: which fraction
+            # of the declared window would have described this median. A ratio, not
+            # a share, so it is never clamped at 100%: a median above the window
+            # says the window is wrong, and 483% says it louder than ">100%".
+            "implied_fraction": (median_pre / window) if window else None,
             "boundaries": int(group["boundaries"])
             if group
             else int(measurement.get("boundaries") or 0),
@@ -313,6 +319,19 @@ def render_ratio_markdown(payload):
                 measured["root"],
             )
         )
+        implied = measured.get("implied_fraction")
+        if implied is not None:
+            declared_fraction = ratios["threshold_fraction"]
+            lines.append(
+                "- implied trigger: %s of the declared window reproduces the measured "
+                "median%s"
+                % (
+                    _pct1(implied),
+                    " (you declared %s)" % _pct1(declared_fraction)
+                    if declared_fraction is not None
+                    else "",
+                )
+            )
         by_trigger = measured.get("by_trigger") or {}
         if by_trigger:
             others = [

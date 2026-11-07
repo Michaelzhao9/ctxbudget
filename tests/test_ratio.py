@@ -458,3 +458,57 @@ def test_a_hand_built_measurement_does_not_invent_a_pair_count():
     text = render_ratio_markdown(payload)
     assert "carry postTokens" not in text
     assert "over 4 boundaries" in text  # the given population is the only one known
+
+
+def test_the_report_names_the_fraction_of_the_window_the_median_implies():
+    """The declared fraction is not the only fraction in the room.
+
+    A reader who is told the median lands at 96.7% of their window has to do the
+    division themselves to learn which ``--trigger`` would have described it. The
+    number is one division over two numbers the report already prints.
+    """
+    payload = ratio_payload(
+        per_turn=614,
+        window=1_000_000,
+        trigger=0.95,
+        measurement={"median_pre": 967_169, "boundaries": 85, "root": "~/projects"},
+    )
+
+    implied = payload["measured"]["implied_fraction"]
+    assert abs(implied - 0.967169) < 1e-9
+    text = render_ratio_markdown(payload)
+    assert "implied trigger: 96.7%" in text
+    assert "you declared 95.0%" in text
+
+
+def test_no_implied_fraction_is_invented_without_a_measurement():
+    payload = ratio_payload(per_turn=614, window=1_000_000, trigger=0.95)
+
+    assert payload["measured"] is None
+    assert "implied" not in render_ratio_markdown(payload)
+
+
+def test_a_median_above_the_window_implies_more_than_one_window():
+    """The implied fraction must not be clamped at 100%: it is a ratio, not a share."""
+    payload = ratio_payload(
+        per_turn=614,
+        window=200_000,
+        trigger=0.8,
+        measurement={"median_pre": 967_169, "boundaries": 85, "root": "~/projects"},
+    )
+
+    assert payload["verdict"] == "window_below_measured"
+    assert payload["measured"]["implied_fraction"] > 1.0
+    assert "implied trigger: 483.6%" in render_ratio_markdown(payload)
+
+
+def test_the_implied_fraction_does_not_claim_a_declared_trigger_that_was_absent():
+    payload = ratio_payload(
+        per_turn=614,
+        window=1_000_000,
+        measurement={"median_pre": 500_000, "boundaries": 10, "root": "~/projects"},
+    )
+
+    text = render_ratio_markdown(payload)
+    assert "implied trigger: 50.0%" in text
+    assert "you declared" not in text
