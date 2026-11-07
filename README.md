@@ -18,6 +18,7 @@ Agent clients inject instruction files, skill descriptions, and MCP tool schemas
 - Report retention schedules and files already past their claimed window.
 - Read Claude Code compaction receipts and compare declared versus measured windows.
 - Attribute the content a compaction threw away to the component that carried it (tool results, thinking, prompts, attachments).
+- Measure whether the pictures in a transcript are new ones or the same screenshot placed again, by content digest and pixel area, never by base64 length.
 - Reclaim SQLite space only through an explicit, verified `--apply` path.
 - Reconcile git worktree registrations with the agent state keyed by those checkouts, without pruning either side.
 
@@ -225,6 +226,60 @@ Rules specific to this mode:
 - `--rereads` is its own mode and refuses every other mode flag, the same way
   `--components` does.
 
+### Whether the pictures are new ones or the same one placed again
+
+97% of the characters charged to compacted `Read` results on this machine are base64
+image payloads, and base64 length is not a size. Two different situations were being
+counted as one: *one screenshot pasted twenty times* (stop re-pasting) and *twenty
+different screenshots* (use pictures less). `--images` separates them by hashing the
+picture's bytes for identity and reading the pixel size out of the image header.
+
+```bash
+ctxbudget --images ~/.claude/projects
+ctxbudget --images ~/.claude/projects --json
+```
+
+Measured on this machine (2,453 image placements in 120 transcripts, 6.2 s):
+
+```
+images: 2,453 placements of 2,153 distinct pictures in 120 transcripts
+- the same picture placed again: 300 placements, 235,884,260 of
+  2,452,309,126 pixels (9.62%)
+  - twice inside one transcript: 41
+  - an extra copy in another transcript: 259; 118 pictures appear in more
+    than one transcript
+- pasted into a prompt (not returned by a tool): 48 placements,
+  34,725,882 pixels, 1 of them a picture already in that context
+- charged to a compaction: 845 placements of 829 distinct pictures
+  (16 placements, 25,287,780 pixels beyond the first copy), 166,904,656 characters
+```
+
+The answer reverses the previous run's advice. Re-pasting the same screenshot is worth
+**9.6% of image pixels, and 2.9% inside the compacted subset**; the cost is the number of
+*distinct* pictures (2,153, mean ≈ 1.1 megapixels). Not re-reading a screenshot saves
+little; taking fewer, smaller screenshots is what moves this number. That is a
+measurement, not an estimate, and it is the opposite of what the characters suggested.
+
+Three counting rules keep the figures honest:
+
+- **Order-free repeats.** "The second time" depends on which file a directory walk reads
+  first, so the tool never attributes a repeat to a particular file: it reports
+  `placements - distinct_images`, per-transcript repeats as `count - 1` summed per
+  transcript, and the remainder as extra copies in other transcripts. Renaming the files
+  cannot change any number.
+- **`api-request-blob` records are copies.** Those records replay a request body; their
+  images are counted and then skipped (439 placements, 98,676,532 characters here), never
+  charged twice.
+- **Pixels, not tokens.** Images are billed by the provider's own rule, so this tool reads
+  width × height from the image header (PNG, JPEG, GIF) and never converts pixels to a
+  token count. Anything it cannot decode (webp, or a header past the first 128 KiB of
+  base64) is counted as a placement with no pixels and reported as unknown size.
+
+`--images` is its own mode and refuses every other mode flag. It counts every tool that
+returned an image, while `--rereads` counts `Read` results only — so the compacted subsets
+of the two commands are close but not equal (845 placements here vs. 1,079 `Read` results
+there, of which 591 carry an image).
+
 ## SQLite reclaim
 
 Dry-run is the default:
@@ -288,6 +343,7 @@ The suite covers context discovery and pricing, duplicate detection, selectors a
 - Retention checks use file modification time and may differ from a product's internal policy.
 - Compaction and window readers currently understand Claude Code receipt shapes.
 - Disk size labels use binary divisors; exact byte counts are included where relevant.
+- `--images` reads PNG, JPEG and GIF headers; webp and truncated payloads are reported as unknown size, and pixels are never converted to tokens because the conversion belongs to the provider.
 - `--worktrees` reconciles only repositories reachable from the scanned path; state whose repository is outside that path is reported as unrooted, never as orphaned.
 - In `--worktrees`, the agent-state key is authoritative and the reconstructed checkout path is a hint: the encoding is not reversible when a path contains hyphens, dots, or spaces.
 

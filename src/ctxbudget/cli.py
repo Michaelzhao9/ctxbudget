@@ -9,6 +9,7 @@ from . import __version__
 from .diff import diff_receipts, load_receipt
 from .compact import attach_turn_cost, scan_compactions
 from .components import render_components_markdown, scan_components
+from .images import render_images_markdown, scan_images
 from .rereads import render_rereads_markdown, scan_rereads
 from .discover import Scan, scan
 from .disk import (
@@ -255,6 +256,16 @@ def build_parser():
         ),
     )
     parser.add_argument(
+        "--images",
+        metavar="DIR",
+        default=None,
+        help=(
+            "measure the pictures that transcript tool results carry under DIR: content"
+            " digest for identity, pixel area from the image header for size; own mode,"
+            " pixels never converted to tokens"
+        ),
+    )
+    parser.add_argument(
         "--worktrees",
         action="store_true",
         help=(
@@ -479,6 +490,7 @@ def main(argv=None):
                 ("--ratio", args.ratio),
                 ("--receipt", bool(args.receipt)),
                 ("--components", args.components),
+                ("--images", args.images),
                 ("--worktrees", args.worktrees),
                 ("--window", args.window is not None),
                 ("--trigger", args.trigger is not None),
@@ -502,6 +514,44 @@ def main(argv=None):
             json.dumps(payload, indent=2, ensure_ascii=False)
             if args.json
             else render_rereads_markdown(payload)
+        )
+        sys.stdout.write(output + "\n")
+        return 0
+    if args.images:
+        conflicts = [
+            name
+            for name, active in (
+                ("--disk", args.disk),
+                ("--reclaim", bool(args.reclaim)),
+                ("--diff", bool(args.diff)),
+                ("--postcompact", bool(args.postcompact)),
+                ("--ratio", args.ratio),
+                ("--receipt", bool(args.receipt)),
+                ("--components", args.components),
+                ("--rereads", args.rereads),
+                ("--worktrees", args.worktrees),
+                ("--window", args.window is not None),
+                ("--trigger", args.trigger is not None),
+                ("--measure", bool(args.measure)),
+                ("--per-turn", args.per_turn is not None),
+            )
+            if active
+        ]
+        if conflicts:
+            sys.stderr.write(
+                "ctxbudget: --images is its own mode and cannot be combined with %s\n"
+                % ", ".join(conflicts)
+            )
+            return 2
+        images_root = os.path.abspath(os.path.expanduser(args.images))
+        if not os.path.isdir(images_root):
+            sys.stderr.write("ctxbudget: %s is not a directory\n" % args.images)
+            return 2
+        images_payload = scan_images(images_root)
+        output = (
+            json.dumps(images_payload, indent=2, ensure_ascii=False)
+            if args.json
+            else render_images_markdown(images_payload)
         )
         sys.stdout.write(output + "\n")
         return 0
