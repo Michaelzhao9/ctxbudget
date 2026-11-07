@@ -175,6 +175,56 @@ Five rules keep the attribution honest:
 - Lines that do not parse are counted and kept out of the denominator.
 - `--components` is its own mode; it refuses `--disk`, `--diff`, `--reclaim`, `--postcompact`, `--ratio`, `--measure`, `--window`, `--trigger`, `--per-turn` and `--worktrees` rather than silently choosing one question to answer.
 
+### Whether the same file was read again
+
+`Read` carried 74% of the compacted characters. That number says nothing about *why*: a
+few huge files and one file read twenty times look identical in it. `--rereads` splits
+them.
+
+```bash
+ctxbudget --rereads ~/.claude/projects
+ctxbudget --rereads ~/.claude/projects --json
+```
+
+Measured on this machine (833 transcripts, 1,079 compacted `Read` results, 752 paths):
+
+```
+counted: 146,714,123 characters across 1,079 reads of 752 paths,
+         41,763,710 of them repeat reads
+same range re-read: 40,919,461 characters (197 reads) revisited an
+         offset/limit already read — a true duplicate, not new lines
+not yet compacted: 224,686,946 characters read after the last boundary,
+         reported and not charged
+```
+
+Read in two populations — 448 image paths and 304 text paths:
+
+```
+- images   142,719,256 characters   97.28% of Read characters   (27.54% is re-reading)
+- text       3,994,867 characters    2.72%                       (34.06% is re-reading)
+```
+
+So the honest reading is *not* "stop reading source files". Nearly all of the `Read`
+weight is base64 of screenshots that were read, read again, and then compacted away;
+text re-reads are 1.36M characters in total, with one Pine script read 18 times as the
+largest single case. Characters are also a **bad proxy for the cost of an image**: a
+model bills an image by its pixels, not by the length of its base64, so the image share
+above is a share of *characters*, and this tool does not convert it to tokens anywhere.
+
+Rules specific to this mode:
+
+- The first charged read of a path is the cost of learning it; every later read of the
+  same path is charged as a repeat. A repeat at the *same* `offset`/`limit` is reported
+  separately as a true duplicate, because a re-read at a new offset is reading new lines.
+- Accounting happens only when a boundary settles a segment. Content after the last
+  boundary is still in context, so a duplicate found there can never make an earlier,
+  genuinely compacted read look like a repeat — the recount in `scratch/r125` checks
+  exactly this and disagreed by 45M characters before the fix.
+- A `Read` result whose call is missing from the transcript (compacted away earlier)
+  is counted as unattributed and given no path.
+- `--rereads` is its own mode and refuses every other mode flag, the same way
+  `--components` does.
+
 ## SQLite reclaim
 
 Dry-run is the default:

@@ -9,6 +9,7 @@ from . import __version__
 from .diff import diff_receipts, load_receipt
 from .compact import attach_turn_cost, scan_compactions
 from .components import render_components_markdown, scan_components
+from .rereads import render_rereads_markdown, scan_rereads
 from .discover import Scan, scan
 from .disk import (
     audit_stores,
@@ -245,6 +246,15 @@ def build_parser():
         ),
     )
     parser.add_argument(
+        "--rereads",
+        metavar="DIR",
+        default=None,
+        help=(
+            "charge the characters the same file's `Read` results cost more than once "
+            "under DIR; own mode, characters not tokens"
+        ),
+    )
+    parser.add_argument(
         "--worktrees",
         action="store_true",
         help=(
@@ -458,6 +468,43 @@ def main(argv=None):
             "--disk, --reclaim or --diff\n"
         )
         return 2
+    if args.rereads:
+        conflicts = [
+            name
+            for name, active in (
+                ("--disk", args.disk),
+                ("--reclaim", bool(args.reclaim)),
+                ("--diff", bool(args.diff)),
+                ("--postcompact", bool(args.postcompact)),
+                ("--ratio", args.ratio),
+                ("--receipt", bool(args.receipt)),
+                ("--components", args.components),
+                ("--worktrees", args.worktrees),
+                ("--window", args.window is not None),
+                ("--trigger", args.trigger is not None),
+                ("--measure", bool(args.measure)),
+                ("--per-turn", args.per_turn is not None),
+            )
+            if active
+        ]
+        if conflicts:
+            sys.stderr.write(
+                "ctxbudget: --rereads is its own mode and cannot be combined with %s\n"
+                % ", ".join(conflicts)
+            )
+            return 2
+        rereads_root = os.path.abspath(os.path.expanduser(args.rereads))
+        if not os.path.isdir(rereads_root):
+            sys.stderr.write("ctxbudget: %s is not a directory\n" % args.rereads)
+            return 2
+        payload = scan_rereads(rereads_root)
+        output = (
+            json.dumps(payload, indent=2, ensure_ascii=False)
+            if args.json
+            else render_rereads_markdown(payload)
+        )
+        sys.stdout.write(output + "\n")
+        return 0
     if args.components:
         components_root = os.path.abspath(os.path.expanduser(args.components))
         if not os.path.isdir(components_root):
