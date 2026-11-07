@@ -373,6 +373,7 @@ The suite covers context discovery and pricing, duplicate detection, selectors a
 - Compaction and window readers currently understand Claude Code receipt shapes.
 - Disk size labels use binary divisors; exact byte counts are included where relevant.
 - `--images` reads PNG, JPEG and GIF headers; webp and truncated payloads are reported as unknown size, and pixels are never converted to tokens because the conversion belongs to the provider.
+- `--images` ranks files, not conversations: a resumed session, or a parent plus its `subagents/` files, occupies one row per file. On this machine 120 files map to 90 sessions and the 10 multi-file sessions hold 30.2% of the pixels, so a single conversation can sit lower in the list than it deserves. Rows still sum to the totals; grouping by session id is not implemented.
 - `--worktrees` reconciles only repositories reachable from the scanned path; state whose repository is outside that path is reported as unrooted, never as orphaned.
 - In `--worktrees`, the agent-state key is authoritative and the reconstructed checkout path is a hint: the encoding is not reversible when a path contains hyphens, dots, or spaces.
 
