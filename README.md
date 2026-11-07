@@ -17,6 +17,7 @@ Agent clients inject instruction files, skill descriptions, and MCP tool schemas
 - Inspect SQLite soft-deleted rows and reclaimable space.
 - Report retention schedules and files already past their claimed window.
 - Read Claude Code compaction receipts and compare declared versus measured windows.
+- Attribute the content a compaction threw away to the component that carried it (tool results, thinking, prompts, attachments).
 - Reclaim SQLite space only through an explicit, verified `--apply` path.
 - Reconcile git worktree registrations with the agent state keyed by those checkouts, without pruning either side.
 
@@ -139,6 +140,41 @@ Those three numbers come from three different populations and are printed as suc
 
 The report also prints the fraction a declared trigger *would* have needed to be: `measured.implied_fraction` is the measured median divided by the declared window, printed as `implied trigger: 96.7% (you declared 95.0%)`. It is a ratio, not a share, so it is never clamped — a median of 967,169 against a declared 200,000-token window prints `483.6%`, which is the same contradiction `window_below_measured` names, in the units the user typed. The declared fraction stays in `--trigger`; nothing is inferred back into the declaration.
 
+### What was actually in the window
+
+`--postcompact` says how much survived a compaction, `--ratio` says whether a declared window matches what was measured. Neither says what the discarded content was *made of*.
+
+```bash
+ctxbudget --components ~/.claude/projects
+ctxbudget --components ~/.claude/projects --json
+```
+
+Measured on this machine (39 transcripts carrying 85 automatic compactions, 267,271,279 characters attributed):
+
+```
+- tool results        197,517,782  73.90%
+- attachments          34,065,905  12.75%
+- tool arguments       28,088,335  10.51%
+- your prompts          5,293,697   1.98%
+- assistant text        2,036,798   0.76%
+- thinking                227,182   0.09%
+- system reminders         41,580   0.02%
+
+tool results by tool:
+- Read                146,714,123  74.28% of tool results
+- Bash                 29,673,164  15.02% of tool results
+```
+
+The numbers are **characters, not tokens**: nothing here guesses a tokens-per-character ratio, and the receipt's own `preTokens` stays the only token count in the tool. Shares are shares of counted characters.
+
+Five rules keep the attribution honest:
+
+- Only `user` and `assistant` records own the content they carry. A transcript also stores an `api-request-blob` that echoes a request whose blocks are already records; counting it would double every character it repeats, so those records are skipped and counted in `ignored_records`.
+- A `tool_result` is named by the tool call its `tool_use_id` points at. When no call in that transcript names the id, the characters still count toward the total and are reported as unattributed instead of being given an invented tool name.
+- A segment ends at each compaction boundary: content after the last boundary is the context the harness has *not* thrown away, so it is reported as `not_yet_compacted_characters` instead of being folded into the answer.
+- Lines that do not parse are counted and kept out of the denominator.
+- `--components` is its own mode; it refuses `--disk`, `--diff`, `--reclaim`, `--postcompact`, `--ratio`, `--measure`, `--window`, `--trigger`, `--per-turn` and `--worktrees` rather than silently choosing one question to answer.
+
 ## SQLite reclaim
 
 Dry-run is the default:
@@ -191,7 +227,7 @@ Every human and JSON report includes the tokenizer name and whether the result i
 uv run --with pytest pytest -q
 ```
 
-The suite covers context discovery and pricing, duplicate detection, selectors and budget exits, disk receipts and diffs, redaction, SQLite soft-delete inspection and verified reclaim, retention reporting, compaction receipts, declared-versus-measured window comparisons, and worktree/state reconciliation (real `git worktree` fixtures, including a deleted checkout and a locked one).
+The suite covers context discovery and pricing, duplicate detection, selectors and budget exits, disk receipts and diffs, redaction, SQLite soft-delete inspection and verified reclaim, retention reporting, compaction receipts, declared-versus-measured window comparisons, per-component attribution of what a compaction discarded, and worktree/state reconciliation (real `git worktree` fixtures, including a deleted checkout and a locked one).
 
 ## Limitations
 

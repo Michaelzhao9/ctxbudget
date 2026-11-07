@@ -8,6 +8,7 @@ import sys
 from . import __version__
 from .diff import diff_receipts, load_receipt
 from .compact import attach_turn_cost, scan_compactions
+from .components import render_components_markdown, scan_components
 from .discover import Scan, scan
 from .disk import (
     audit_stores,
@@ -234,6 +235,16 @@ def build_parser():
         ),
     )
     parser.add_argument(
+        "--components",
+        metavar="DIR",
+        default=None,
+        help=(
+            "attribute the content a compaction threw away under DIR to the component "
+            "that carried it (prompt, reminders, thinking, tool arguments, tool results); "
+            "own mode, characters not tokens"
+        ),
+    )
+    parser.add_argument(
         "--worktrees",
         action="store_true",
         help=(
@@ -386,11 +397,35 @@ def main(argv=None):
                 % ", ".join(conflicts)
             )
             return 2
+    if args.components:
+        conflicts = [
+            name
+            for name, active in (
+                ("--disk", args.disk),
+                ("--reclaim", bool(args.reclaim)),
+                ("--diff", bool(args.diff)),
+                ("--postcompact", bool(args.postcompact)),
+                ("--ratio", args.ratio),
+                ("--receipt", bool(args.receipt)),
+                ("--worktrees", args.worktrees),
+                ("--window", args.window is not None),
+                ("--trigger", args.trigger is not None),
+                ("--measure", bool(args.measure)),
+                ("--per-turn", args.per_turn is not None),
+            )
+            if active
+        ]
+        if conflicts:
+            sys.stderr.write(
+                "ctxbudget: --components is its own mode and cannot be combined with %s\n"
+                % ", ".join(conflicts)
+            )
+            return 2
     if args.ratio:
-        if any([args.disk, args.reclaim, args.diff, args.postcompact]):
+        if any([args.disk, args.reclaim, args.diff, args.postcompact, args.components]):
             sys.stderr.write(
                 "ctxbudget: --ratio is its own mode and cannot be combined with "
-                "--disk, --reclaim, --diff or --postcompact\n"
+                "--disk, --reclaim, --diff, --postcompact or --components\n"
             )
             return 2
         if args.window is None:
@@ -423,6 +458,19 @@ def main(argv=None):
             "--disk, --reclaim or --diff\n"
         )
         return 2
+    if args.components:
+        components_root = os.path.abspath(os.path.expanduser(args.components))
+        if not os.path.isdir(components_root):
+            sys.stderr.write("ctxbudget: %s is not a directory\n" % args.components)
+            return 2
+        payload = scan_components(components_root)
+        output = (
+            json.dumps(payload, indent=2, ensure_ascii=False)
+            if args.json
+            else render_components_markdown(payload)
+        )
+        sys.stdout.write(output + "\n")
+        return 0
     if args.ratio:
         per_turn = args.per_turn
         per_turn_source = "flag"
