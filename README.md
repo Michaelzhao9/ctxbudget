@@ -280,6 +280,35 @@ returned an image, while `--rereads` counts `Read` results only — so the compa
 of the two commands are close but not equal (845 placements here vs. 1,079 `Read` results
 there, of which 591 carry an image).
 
+### Which transcripts held the pixels
+
+A total of 2.45 billion pixels says nothing you can act on; the per-picture list says the
+expensive pictures are one-off 2000-px screenshots. The second list ranks the transcripts
+themselves, because a session that holds 10% of every image on the machine is a different
+decision from "use smaller screenshots".
+
+```
+transcripts that held the most pixels (pixels, not tokens; share of every pixel in this scan):
+- ...-cd8eedb4fa42.jsonl   241 placements  240 pictures  248,766,898 px  10.1%
+- ...-d0cdabe2bc7c.jsonl    60 placements   56 pictures  123,129,020 px   5.0%
+```
+
+(Session names truncated here; the tool prints each transcript's path relative to the
+scanned root, shortened from the left with `...` when it is longer than the column.)
+
+Measured here across 120 transcripts with pictures (6.7 s): the heaviest single transcript
+holds **10.1%** of all image pixels in 241 placements of 240 distinct pictures, and the top
+eight together hold **38.0%**. That is a small number of long sessions, not a uniform habit —
+and it is also why "the average session" is not a useful target for advice.
+
+Transcript rows use this transcript's own counts: pixels are what its placements added up
+to, and `repeat_pixels` is that row's pixels minus the pixels of the distinct pictures it
+holds. A picture that appears once in each of two transcripts is therefore a repeat in
+neither row (each one placed it once) even though the global repeat count sees two
+placements of one picture — the two numbers answer different questions and are never added
+together. The per-transcript rows sum exactly to the reported totals, which is what makes
+the ranking safe to read.
+
 ## SQLite reclaim
 
 Dry-run is the default:

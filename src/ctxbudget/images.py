@@ -135,6 +135,7 @@ def _empty_payload(root):
         "skipped_copy_characters": 0,
         "media_types": {},
         "by_image": {},
+        "by_transcript": [],
     }
 
 
@@ -165,6 +166,10 @@ def scan_images(root):
                 continue
             payload["files_scanned"] += 1
             in_this_transcript = {}
+            transcript_digest_pixels = {}
+            transcript_pixels = 0
+            transcript_characters = 0
+            transcript_placements = 0
             has_images = False
             pending_compacted = []
 
@@ -231,6 +236,10 @@ def scan_images(root):
                                 payload["placements"] += 1
                                 payload["characters"] += characters
                                 payload["pixels"] += pixels
+                                transcript_placements += 1
+                                transcript_characters += characters
+                                transcript_pixels += pixels
+                                transcript_digest_pixels[digest] = pixels
                                 bucket = media_types.setdefault(
                                     media_type, {"placements": 0, "characters": 0, "pixels": 0}
                                 )
@@ -269,6 +278,19 @@ def scan_images(root):
             same_transcript_repeats += sum(count - 1 for count in in_this_transcript.values())
             if has_images:
                 payload["transcripts_with_images"] += 1
+                payload["by_transcript"].append(
+                    {
+                        "transcript": os.path.relpath(full, root),
+                        "placements": transcript_placements,
+                        "distinct_images": len(transcript_digest_pixels),
+                        "characters": transcript_characters,
+                        "pixels": transcript_pixels,
+                        "repeat_pixels": transcript_pixels - sum(transcript_digest_pixels.values()),
+                    }
+                )
+    payload["by_transcript"] = sorted(
+        payload["by_transcript"], key=lambda row: (-row["pixels"], row["transcript"])
+    )
     payload["distinct_images"] = len(rows)
     payload["repeat_placements"] = payload["placements"] - payload["distinct_images"]
     payload["repeat_pixels"] = payload["pixels"] - sum(row["pixels"] for row in rows.values())
@@ -292,10 +314,19 @@ def scan_images(root):
 
 
 IMAGE_ROWS = 8
+TRANSCRIPT_ROWS = 8
 
 
 def _thousands(value):
     return "{:,}".format(int(value))
+
+
+def _short(name, width):
+    """Keep a column aligned without hiding which transcript it is past `width`."""
+    name = str(name)
+    if len(name) <= width:
+        return name
+    return "..." + name[-(width - 3) :]
 
 
 def render_images_markdown(payload):
@@ -373,6 +404,29 @@ def render_images_markdown(payload):
         )
     if len(by_image) > IMAGE_ROWS:
         lines.append("- %s more pictures" % _thousands(len(by_image) - IMAGE_ROWS))
+    by_transcript = payload.get("by_transcript") or []
+    if by_transcript:
+        lines.append("")
+        lines.append(
+            "transcripts that held the most pixels (pixels, not tokens; share of every"
+            " pixel in this scan):"
+        )
+        for row in by_transcript[:TRANSCRIPT_ROWS]:
+            lines.append(
+                "- %-56s %4s placements  %3s pictures  %12s px  %5.1f%%"
+                % (
+                    _short(row.get("transcript") or "?", 56),
+                    _thousands(row.get("placements") or 0),
+                    _thousands(row.get("distinct_images") or 0),
+                    _thousands(row.get("pixels") or 0),
+                    (100.0 * (row.get("pixels") or 0) / pixels) if pixels else 0.0,
+                )
+            )
+        if len(by_transcript) > TRANSCRIPT_ROWS:
+            lines.append(
+                "- %s more transcripts with pictures"
+                % _thousands(len(by_transcript) - TRANSCRIPT_ROWS)
+            )
     lines.append("")
     lines.append(
         "counted: %s base64 characters and %s pixels; characters are a bad proxy for the"

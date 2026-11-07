@@ -433,3 +433,64 @@ def test_a_prompt_paste_is_a_repeat_only_inside_its_own_transcript(tmp_path):
     assert payload["prompt_placements"] == 2
     assert payload["prompt_repeat_placements"] == 0
     assert payload["cross_transcript_extra_placements"] == 1
+
+
+def test_each_transcript_is_ranked_by_the_pixels_it_holds(tmp_path):
+    from ctxbudget.images import scan_images
+
+    big = _png(800, 600)
+    small = _png(100, 100)
+    root = _tree(
+        tmp_path,
+        {
+            "quiet.jsonl": [
+                _read_call("r1", "/shots/small.png"),
+                _read_result("r1", [_image_block(small, "image/png")]),
+            ],
+            "fed.jsonl": [
+                _read_call("r1", "/shots/big.png"),
+                _read_result("r1", [_image_block(big, "image/png")]),
+                _read_call("r2", "/shots/big.png"),
+                _read_result("r2", [_image_block(big, "image/png")]),
+            ],
+        },
+    )
+
+    payload = scan_images(root)
+    rows = payload["by_transcript"]
+
+    assert [row["transcript"] for row in rows] == ["fed.jsonl", "quiet.jsonl"]
+    assert rows[0]["placements"] == 2
+    assert rows[0]["distinct_images"] == 1
+    assert rows[0]["pixels"] == 2 * 800 * 600
+    assert rows[0]["repeat_pixels"] == 800 * 600
+    assert rows[1]["pixels"] == 100 * 100
+    assert sum(row["pixels"] for row in rows) == payload["pixels"]
+
+
+def test_render_names_the_transcript_that_held_the_most_pixels(tmp_path, capsys):
+    from ctxbudget.cli import main
+
+    big = _png(800, 600)
+    small = _png(100, 100)
+    root = _tree(
+        tmp_path,
+        {
+            "fed.jsonl": [
+                _read_call("r1", "/shots/big.png"),
+                _read_result("r1", [_image_block(big, "image/png")]),
+            ],
+            "quiet.jsonl": [
+                _read_call("r1", "/shots/small.png"),
+                _read_result("r1", [_image_block(small, "image/png")]),
+            ],
+        },
+    )
+
+    assert main(["--images", root]) == 0
+    out = capsys.readouterr().out
+
+    assert "transcripts that held the most pixels" in out
+    share = "%.1f%%" % (100.0 * 800 * 600 / (800 * 600 + 100 * 100))
+    assert share in out
+    assert out.index("fed.jsonl") < out.index("quiet.jsonl")
