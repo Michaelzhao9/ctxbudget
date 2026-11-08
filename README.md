@@ -236,7 +236,8 @@ picture's bytes for identity and reading the pixel size out of the image header.
 
 ```bash
 ctxbudget --images ~/.claude/projects
-ctxbudget --images ~/.claude/projects --json
+ctxbudget --images ~/.claude/projects --top 3     # 3 rows per ranking
+ctxbudget --images ~/.claude/projects --json      # every row, never truncated
 ```
 
 Measured on this machine (2,453 image placements in 120 transcripts, 6.2 s):
@@ -274,6 +275,13 @@ Three counting rules keep the figures honest:
   width × height from the image header (PNG, JPEG, GIF) and never converts pixels to a
   token count. Anything it cannot decode (webp, or a header past the first 128 KiB of
   base64) is counted as a placement with no pixels and reported as unknown size.
+
+`--top N` is the same flag the default scan uses for its source list: with `--images` it
+sets how many rows each of the three rankings prints (default 8), and the hidden tail is
+still counted on the line below, so a shorter list never hides how much was left out
+(`--top 3` here prints `2,150 more pictures`, `117 more transcripts`, `68 more sessions`;
+the totals do not move). It is refused with `--images --json` instead of being silently
+ignored, because the JSON carries the full ranking by design.
 
 `--images` is its own mode and refuses every other mode flag. It counts every tool that
 returned an image, while `--rereads` counts `Read` results only — so the compacted subsets

@@ -594,3 +594,47 @@ def test_render_names_the_session_only_when_one_session_spans_files(tmp_path, ca
 
     assert "transcripts that held the most pixels" in plain_out
     assert "grouped by session id" not in plain_out
+
+
+def test_top_shows_n_rows_and_says_how_many_it_hid(tmp_path, capsys):
+    from ctxbudget.cli import main
+
+    root = _tree(
+        tmp_path,
+        {
+            "fed.jsonl": [
+                _read_call("r1", "/shots/big.png"),
+                _read_result("r1", [_image_block(_png(800, 600), "image/png")]),
+            ],
+            "quiet.jsonl": [
+                _read_call("r1", "/shots/small.png"),
+                _read_result("r1", [_image_block(_png(100, 100), "image/png")]),
+            ],
+        },
+    )
+
+    assert main(["--images", root, "--top", "1"]) == 0
+    out = capsys.readouterr().out
+
+    # One transcript row only, and the hidden one is counted rather than dropped.
+    assert out.count("placements") >= 1
+    assert "fed.jsonl" in out
+    assert "quiet.jsonl" not in out
+    assert "1 more transcripts with pictures" in out
+    # Two distinct pictures, one shown.
+    assert "1 more pictures" in out
+
+
+def test_top_must_be_a_positive_number(tmp_path, capsys):
+    from ctxbudget.cli import main
+
+    assert main(["--images", str(tmp_path), "--top", "0"]) == 2
+    assert "--top" in capsys.readouterr().err
+
+
+def test_top_with_json_is_refused_rather_than_ignored(tmp_path, capsys):
+    from ctxbudget.cli import main
+
+    assert main(["--images", str(tmp_path), "--json", "--top", "2"]) == 2
+    err = capsys.readouterr().err
+    assert "--top" in err and "json" in err.lower()

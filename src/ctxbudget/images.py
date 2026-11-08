@@ -383,9 +383,8 @@ def scan_images(root):
     return payload
 
 
-IMAGE_ROWS = 8
-TRANSCRIPT_ROWS = 8
-SESSION_ROWS = 8
+# How many rows each ranking prints unless the caller asks for another number.
+DEFAULT_ROWS = 8
 
 
 def _thousands(value):
@@ -400,7 +399,7 @@ def _short(name, width):
     return "..." + name[-(width - 3) :]
 
 
-def render_images_markdown(payload):
+def render_images_markdown(payload, rows=None):
     """Say whether the pictures are new ones or the same one placed again."""
     payload = payload or {}
     placements = payload.get("placements") or 0
@@ -456,8 +455,9 @@ def render_images_markdown(payload):
         "  (that is the subset `--rereads` charges, except that `--rereads` counts Read results only while this counts every tool)",
         "",
     ]
+    limit = DEFAULT_ROWS if rows is None else int(rows)
     by_image = payload.get("by_image") or {}
-    for digest, row in list(by_image.items())[:IMAGE_ROWS]:
+    for digest, row in list(by_image.items())[:limit]:
         size = (
             "%dx%d" % (row["width"], row["height"])
             if row.get("width") is not None
@@ -473,8 +473,8 @@ def render_images_markdown(payload):
                 _thousands(row.get("pixels") or 0),
             )
         )
-    if len(by_image) > IMAGE_ROWS:
-        lines.append("- %s more pictures" % _thousands(len(by_image) - IMAGE_ROWS))
+    if len(by_image) > limit:
+        lines.append("- %s more pictures" % _thousands(len(by_image) - limit))
     by_transcript = payload.get("by_transcript") or []
     if by_transcript:
         lines.append("")
@@ -482,7 +482,7 @@ def render_images_markdown(payload):
             "transcripts that held the most pixels (pixels, not tokens; share of every"
             " pixel in this scan):"
         )
-        for row in by_transcript[:TRANSCRIPT_ROWS]:
+        for row in by_transcript[:limit]:
             lines.append(
                 "- %-56s %4s placements  %3s pictures  %12s px  %5.1f%%"
                 % (
@@ -493,10 +493,10 @@ def render_images_markdown(payload):
                     (100.0 * (row.get("pixels") or 0) / pixels) if pixels else 0.0,
                 )
             )
-        if len(by_transcript) > TRANSCRIPT_ROWS:
+        if len(by_transcript) > limit:
             lines.append(
                 "- %s more transcripts with pictures"
-                % _thousands(len(by_transcript) - TRANSCRIPT_ROWS)
+                % _thousands(len(by_transcript) - limit)
             )
     by_session = payload.get("by_session") or []
     if by_session and len(by_session) < len(by_transcript):
@@ -507,7 +507,7 @@ def render_images_markdown(payload):
             "the same pixels grouped by session id (a resumed conversation writes more"
             " than one file, so the per-file ranking splits it):"
         )
-        for row in by_session[:SESSION_ROWS]:
+        for row in by_session[:limit]:
             label = str(row.get("session") or "?")
             # A session id is long; a file that names none is shown by its name.
             label = label[:8] if SESSION_ID.match(label) else _short(label, 14)
@@ -522,10 +522,10 @@ def render_images_markdown(payload):
                     (100.0 * (row.get("pixels") or 0) / pixels) if pixels else 0.0,
                 )
             )
-        if len(by_session) > SESSION_ROWS:
+        if len(by_session) > limit:
             lines.append(
                 "- %s more session(s) with pictures"
-                % _thousands(len(by_session) - SESSION_ROWS)
+                % _thousands(len(by_session) - limit)
             )
         multi = [row for row in by_session if (row.get("files") or 0) > 1]
         if multi:

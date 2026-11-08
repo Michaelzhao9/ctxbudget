@@ -87,7 +87,16 @@ def build_parser():
         metavar="N",
         help="exit 1 when the per-turn total exceeds N (CI gate)",
     )
-    parser.add_argument("--top", type=int, default=None, metavar="N", help="show N sources")
+    parser.add_argument(
+        "--top",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "show N sources, or with --images N rows per ranking (default 8; the "
+            "rows it hides are still counted on the last line)"
+        ),
+    )
     parser.add_argument(
         "--no-dupes", action="store_true", help="skip near-duplicate detection"
     )
@@ -399,6 +408,14 @@ def main(argv=None):
     if args.per_turn is not None and args.per_turn <= 0:
         sys.stderr.write("ctxbudget: --per-turn must be positive\n")
         return 2
+    if args.top is not None and args.top <= 0:
+        sys.stderr.write("ctxbudget: --top must be positive\n")
+        return 2
+    if args.top is not None and args.json and args.images:
+        sys.stderr.write(
+            "ctxbudget: --images --json always prints the full ranking, so --top would be ignored\n"
+        )
+        return 2
     if args.worktrees:
         conflicts = [
             name
@@ -551,7 +568,7 @@ def main(argv=None):
         output = (
             json.dumps(images_payload, indent=2, ensure_ascii=False)
             if args.json
-            else render_images_markdown(images_payload)
+            else render_images_markdown(images_payload, rows=args.top)
         )
         sys.stdout.write(output + "\n")
         return 0
