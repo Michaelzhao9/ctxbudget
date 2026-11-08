@@ -344,7 +344,18 @@ the same pixels grouped by session id (a resumed conversation writes more than o
 - 20 session(s) hold more than one file and 68.3% of the pixels
 - 50.4% of those pixels sit in subagent transcripts (49 file(s)); a subagent runs its own
   context, so a session row is what one conversation cost, not what one window held
+- 1 session(s) hold files in more than one project directory and 0.0% of the pixels
+- 18 session(s) also keep a file in a subdirectory of their own project (a subagent transcript), which is not another checkout
+  of the 20 multi-file session(s): 18 kept a file in a subdirectory, 1 changed checkout, 1 kept several files in one directory
 ```
+
+The last line exists because the two sentences above it are not a partition: a session can
+be both nested and cross-checkout, so 18 + 1 need not reproduce 20 — and it did not say
+what the missing one was. Three disjoint classes
+are counted instead — subdirectory only, more than one checkout, several files side by
+side — and they add up to the multi-file total by construction. On this machine 18 + 1 + 1
+= 20 and one conversation is the side-by-side case, which the older output left to the
+reader to guess.
 
 Measured here (120 files with pictures → 71 conversations): the heaviest single file holds
 10.1% of all image pixels and the same conversation holds 13.2% once its 8 files are joined;

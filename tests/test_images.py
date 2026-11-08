@@ -762,3 +762,60 @@ def test_the_session_payload_separates_dirs_from_projects(tmp_path):
 
     assert row["dirs"] == 2
     assert row["projects"] == 2
+
+
+def test_the_multi_file_line_breaks_down_into_classes_that_add_up(tmp_path, capsys):
+    from ctxbudget.cli import main
+
+    nested = "11111111-2222-3333-4444-555555555555"
+    crossed = "22222222-3333-4444-5555-666666666666"
+    same = "33333333-4444-5555-6666-777777777777"
+    big = _png(800, 600)
+    small = _png(100, 100)
+    root = _tree(
+        tmp_path,
+        {
+            # one conversation whose subagent wrote into its own directory
+            "proj-a/" + nested + ".jsonl": [
+                _read_call("r1", "/shots/big.png"),
+                _read_result("r1", [_image_block(big, "image/png")]),
+            ],
+            "proj-a/" + nested + "/subagents/agent-a1.jsonl": [
+                _read_call("r2", "/shots/small.png"),
+                _read_result("r2", [_image_block(small, "image/png")]),
+            ],
+            # one conversation resumed from a second checkout
+            "proj-a/" + crossed + ".jsonl": [
+                _read_call("r3", "/shots/big.png"),
+                _read_result("r3", [_image_block(big, "image/png")]),
+            ],
+            "proj-b/" + crossed + ".jsonl": [
+                _read_call("r4", "/shots/small.png"),
+                _read_result("r4", [_image_block(small, "image/png")]),
+            ],
+            # one conversation that wrote two files side by side in one checkout
+            "proj-a/" + same + ".jsonl": [
+                _read_call("r5", "/shots/big.png"),
+                _read_result("r5", [_image_block(big, "image/png")]),
+            ],
+            "proj-a/" + same + "_resumed.jsonl": [
+                _read_call("r6", "/shots/small.png"),
+                _read_result("r6", [_image_block(small, "image/png")]),
+            ],
+        },
+    )
+
+    assert main(["--images", root]) == 0
+    out = capsys.readouterr().out
+
+    # Three sessions hold more than one file; the two sentences under it (nested,
+    # cross-checkout) count 1 and 1, and a reader who adds them gets 2. The gap is
+    # a third class, so it is counted instead of left implied.
+    assert "3 session(s) hold more than one file" in out
+    assert "1 session(s) also keep a file in a subdirectory of their own project" in out
+    assert "1 session(s) hold files in more than one project directory" in out
+    assert (
+        "  of the 3 multi-file session(s): 1 kept a file in a subdirectory,"
+        " 1 changed checkout, 1 kept several files in one directory"
+        in out
+    )

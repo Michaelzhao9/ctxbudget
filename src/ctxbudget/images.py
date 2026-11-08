@@ -599,6 +599,40 @@ def render_images_markdown(payload, rows=None):
                 " (a subagent transcript), which is not another checkout"
                 % _thousands(len(nested))
             )
+        if multi:
+            # The two sentences above count overlapping facts, so adding them does
+            # not give the multi-file total. Split the total into classes that are
+            # disjoint by construction and print the arithmetic the reader would
+            # otherwise have to guess at.
+            crossed = [row for row in multi if (row.get("projects") or 0) > 1]
+            nested_only = [
+                row
+                for row in multi
+                if (row.get("projects") or 0) <= 1
+                and (row.get("dirs") or 0) > (row.get("projects") or 0)
+            ]
+            side_by_side = [
+                row
+                for row in multi
+                if (row.get("projects") or 0) <= 1
+                and (row.get("dirs") or 0) <= (row.get("projects") or 0)
+            ]
+            parts = []
+            if nested_only:
+                parts.append(
+                    "%s kept a file in a subdirectory" % _thousands(len(nested_only))
+                )
+            if crossed:
+                parts.append("%s changed checkout" % _thousands(len(crossed)))
+            if side_by_side:
+                parts.append(
+                    "%s kept several files in one directory"
+                    % _thousands(len(side_by_side))
+                )
+            lines.append(
+                "  of the %s multi-file session(s): %s"
+                % (_thousands(len(multi)), ", ".join(parts))
+            )
     lines.append("")
     lines.append(
         "counted: %s base64 characters and %s pixels; characters are a bad proxy for the"
