@@ -320,6 +320,7 @@ def scan_images(root):
                         "session": session or rel,
                         "project": (os.path.dirname(rel) or ".").split(os.sep)[0],
                         "dirs": set(),
+                        "projects": set(),
                         "files": 0,
                         "subagent_files": 0,
                         "subagent_pixels": 0,
@@ -330,6 +331,12 @@ def scan_images(root):
                     },
                 )
                 bucket["dirs"].add(os.path.dirname(rel))
+                # A project root is the first directory under the transcripts
+                # root: a resume into another checkout moves the root, while
+                # <session>/subagents stays inside the same one.
+                bucket["projects"].add(
+                    (os.path.dirname(rel) or ".").split(os.sep)[0]
+                )
                 bucket["files"] += 1
                 if "subagents" in rel.split(os.sep):
                     bucket["subagent_files"] += 1
@@ -348,6 +355,7 @@ def scan_images(root):
             "session": bucket["session"],
             "project": bucket["project"],
             "dirs": len(bucket["dirs"]),
+            "projects": len(bucket["projects"]),
             "files": bucket["files"],
             "subagent_files": bucket["subagent_files"],
             "subagent_pixels": bucket["subagent_pixels"],
@@ -511,8 +519,16 @@ def render_images_markdown(payload, rows=None):
             label = str(row.get("session") or "?")
             # A session id is long; a file that names none is shown by its name.
             label = label[:8] if SESSION_ID.match(label) else _short(label, 14)
+            # A session id is the conversation, not the checkout: when its files
+            # sit in more than one project directory the row has to say so, or a
+            # reader counting directories adds the conversation up twice.
+            dirs = row.get("dirs") or 0
+            projects = row.get("projects") or 0
+            mark = ("  %d dirs" % dirs) if dirs > 1 else ""
+            if projects > 1:
+                mark += " (%d project(s))" % projects
             lines.append(
-                "- %-12s %2s file(s)  %4s placements  %3s pictures  %12s px  %5.1f%%"
+                "- %-12s %2s file(s)  %4s placements  %3s pictures  %12s px  %5.1f%%%s"
                 % (
                     label,
                     _thousands(row.get("files") or 0),
@@ -520,6 +536,7 @@ def render_images_markdown(payload, rows=None):
                     _thousands(row.get("distinct_images") or 0),
                     _thousands(row.get("pixels") or 0),
                     (100.0 * (row.get("pixels") or 0) / pixels) if pixels else 0.0,
+                    mark,
                 )
             )
         if len(by_session) > limit:
@@ -552,6 +569,36 @@ def render_images_markdown(payload, rows=None):
                     "  a subagent runs in its own context, so a session row is what one"
                     " conversation cost, not what one window held"
                 )
+        # Two different facts share the word "directory": a conversation resumed
+        # from a second checkout (another project root) and a conversation whose
+        # subagent wrote into <session>/subagents. Only the first one is a merge
+        # the per-directory view would count twice, so they are counted apart.
+        moved = [row for row in by_session if (row.get("projects") or 0) > 1]
+        if moved:
+            moved_pixels = sum(row.get("pixels") or 0 for row in moved)
+            lines.append(
+                "- %s session(s) hold files in more than one project directory and %s"
+                " of the pixels"
+                % (
+                    _thousands(len(moved)),
+                    ("%.1f%%" % (100.0 * moved_pixels / pixels)) if pixels else "0.0%",
+                )
+            )
+            lines.append(
+                "  the checkout changed, not the conversation, so a per-directory"
+                " ranking would count that session twice"
+            )
+        nested = [
+            row
+            for row in by_session
+            if (row.get("dirs") or 0) > (row.get("projects") or 0)
+        ]
+        if nested:
+            lines.append(
+                "- %s session(s) also keep a file in a subdirectory of their own project"
+                " (a subagent transcript), which is not another checkout"
+                % _thousands(len(nested))
+            )
     lines.append("")
     lines.append(
         "counted: %s base64 characters and %s pixels; characters are a bad proxy for the"

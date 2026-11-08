@@ -283,6 +283,16 @@ still counted on the line below, so a shorter list never hides how much was left
 the totals do not move). It is refused with `--images --json` instead of being silently
 ignored, because the JSON carries the full ranking by design.
 
+A session row also states how many directories its files sit in, and how many of those
+are project roots. The two are different facts and the output keeps them apart: a
+conversation resumed from a second checkout has one id and two project directories
+(`2 dirs (2 project(s))` on the row, 1 session here, 0.0% of the pixels), while a
+conversation whose subagent wrote into `<session>/subagents` has two directories inside
+one checkout (18 sessions here) and is not a merge at all. Counting the second kind as a
+move would put 68.0% of the pixels under a claim about resumes that the paths do not
+support; counting neither would let a reader who ranks by directory add a resumed
+conversation up twice.
+
 `--images` is its own mode and refuses every other mode flag. It counts every tool that
 returned an image, while `--rereads` counts `Read` results only — so the compacted subsets
 of the two commands are close but not equal (845 placements here vs. 1,079 `Read` results
@@ -412,7 +422,7 @@ The suite covers context discovery and pricing, duplicate detection, selectors a
 - Compaction and window readers currently understand Claude Code receipt shapes.
 - Disk size labels use binary divisors; exact byte counts are included where relevant.
 - `--images` reads PNG, JPEG and GIF headers; webp and truncated payloads are reported as unknown size, and pixels are never converted to tokens because the conversion belongs to the provider.
-- `--images` prints two rankings: per file, and folded by the session id in the path (printed only when a conversation spans files). Grouping is by id alone, so on this machine 120 files fold to 71 conversations and 20 of them hold 68.3% of the pixels; a (directory, id) key reports 90 conversations and 10 multi-file ones, because it splits a session's main file from its `subagents/` directory. Subagent transcripts run in their own context and are still counted inside their conversation — the block states that share (50.4% here) rather than hiding it.
+- `--images` prints two rankings: per file, and folded by the session id in the path (printed only when a conversation spans files). Grouping is by id alone, so on this machine 120 files fold to 71 conversations and 20 of them hold 68.3% of the pixels; a (directory, id) key reports 90 conversations and 10 multi-file ones, because it splits a session's main file from its `subagents/` directory. Subagent transcripts run in their own context and are still counted inside their conversation — the block states that share (50.4% here) rather than hiding it. The row's `N dirs` counts directories, and `(N project(s))` is printed only when those directories are different project roots; 18 of the 19 multi-directory sessions here are one checkout with a `subagents/` directory, and exactly 1 spans two checkouts.
 - `--worktrees` reconciles only repositories reachable from the scanned path; state whose repository is outside that path is reported as unrooted, never as orphaned.
 - In `--worktrees`, the agent-state key is authoritative and the reconstructed checkout path is a hint: the encoding is not reversible when a path contains hyphens, dots, or spaces.
 

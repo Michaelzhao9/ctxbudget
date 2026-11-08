@@ -638,3 +638,127 @@ def test_top_with_json_is_refused_rather_than_ignored(tmp_path, capsys):
     assert main(["--images", str(tmp_path), "--json", "--top", "2"]) == 2
     err = capsys.readouterr().err
     assert "--top" in err and "json" in err.lower()
+
+
+def test_a_session_that_spans_project_dirs_says_so_in_its_row(tmp_path, capsys):
+    from ctxbudget.cli import main
+
+    big = _png(800, 600)
+    small = _png(100, 100)
+    session = "11111111-2222-3333-4444-555555555555"
+    root = _tree(
+        tmp_path,
+        {
+            "proj-a/" + session + ".jsonl": [
+                _read_call("r1", "/shots/big.png"),
+                _read_result("r1", [_image_block(big, "image/png")]),
+            ],
+            "proj-b/" + session + ".jsonl": [
+                _read_call("r2", "/shots/small.png"),
+                _read_result("r2", [_image_block(small, "image/png")]),
+            ],
+            "proj-c/other.jsonl": [
+                _read_call("r3", "/shots/small.png"),
+                _read_result("r3", [_image_block(small, "image/png")]),
+            ],
+        },
+    )
+
+    assert main(["--images", root]) == 0
+    out = capsys.readouterr().out
+
+    # The row itself carries the fact: one conversation, two working directories,
+    # and they are two checkouts rather than one checkout with a subdirectory.
+    row = [line for line in out.splitlines() if line.startswith("- " + session[:8])]
+    assert len(row) == 1
+    assert "2 dirs" in row[0]
+    assert "2 project(s)" in row[0]
+    # And the corpus-level count is stated with its own denominator.
+    share = "%.1f%%" % (100.0 * (800 * 600 + 100 * 100) / (800 * 600 + 2 * 100 * 100))
+    assert (
+        "1 session(s) hold files in more than one project directory and %s of the pixels"
+        % share
+        in out
+    )
+
+
+def test_a_subagent_directory_is_not_another_project(tmp_path, capsys):
+    from ctxbudget.cli import main
+
+    session = "11111111-2222-3333-4444-555555555555"
+    root = _tree(
+        tmp_path,
+        {
+            "proj-a/" + session + ".jsonl": [
+                _read_call("r1", "/shots/big.png"),
+                _read_result("r1", [_image_block(_png(800, 600), "image/png")]),
+            ],
+            "proj-a/" + session + "/subagents/agent-a1.jsonl": [
+                _read_call("r2", "/shots/small.png"),
+                _read_result("r2", [_image_block(_png(100, 100), "image/png")]),
+            ],
+        },
+    )
+
+    assert main(["--images", root]) == 0
+    out = capsys.readouterr().out
+
+    # Two directories, one checkout: the row says the directories, never a project.
+    row = [line for line in out.splitlines() if line.startswith("- " + session[:8])]
+    assert len(row) == 1
+    assert "2 dirs" in row[0]
+    assert "project" not in row[0]
+    assert "more than one project directory" not in out
+    assert (
+        "1 session(s) also keep a file in a subdirectory of their own project"
+        in out
+    )
+
+
+def test_every_session_inside_one_directory_states_neither_count(tmp_path, capsys):
+    from ctxbudget.cli import main
+
+    session = "11111111-2222-3333-4444-555555555555"
+    root = _tree(
+        tmp_path,
+        {
+            "proj-a/" + session + ".jsonl": [
+                _read_call("r1", "/shots/big.png"),
+                _read_result("r1", [_image_block(_png(800, 600), "image/png")]),
+            ],
+            "proj-a/other.jsonl": [
+                _read_call("r2", "/shots/small.png"),
+                _read_result("r2", [_image_block(_png(100, 100), "image/png")]),
+            ],
+        },
+    )
+
+    assert main(["--images", root]) == 0
+    out = capsys.readouterr().out
+
+    assert "dirs" not in out
+    assert "project" not in out
+
+
+def test_the_session_payload_separates_dirs_from_projects(tmp_path):
+    from ctxbudget.images import scan_images
+
+    session = "11111111-2222-3333-4444-555555555555"
+    root = _tree(
+        tmp_path,
+        {
+            "proj-a/" + session + ".jsonl": [
+                _read_call("r1", "/shots/big.png"),
+                _read_result("r1", [_image_block(_png(800, 600), "image/png")]),
+            ],
+            "proj-b/" + session + ".jsonl": [
+                _read_call("r2", "/shots/small.png"),
+                _read_result("r2", [_image_block(_png(100, 100), "image/png")]),
+            ],
+        },
+    )
+
+    row = scan_images(root)["by_session"][0]
+
+    assert row["dirs"] == 2
+    assert row["projects"] == 2
