@@ -74,6 +74,7 @@ def _boundary():
 def _tree(tmp_path, files):
     for name, records in files.items():
         path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
     return str(tmp_path)
 
@@ -494,3 +495,102 @@ def test_render_names_the_transcript_that_held_the_most_pixels(tmp_path, capsys)
     share = "%.1f%%" % (100.0 * 800 * 600 / (800 * 600 + 100 * 100))
     assert share in out
     assert out.index("fed.jsonl") < out.index("quiet.jsonl")
+
+
+def test_a_session_that_spans_files_is_one_row(tmp_path):
+    from ctxbudget.images import scan_images
+
+    big = _png(800, 600)
+    small = _png(100, 100)
+    session = "11111111-2222-3333-4444-555555555555"
+    root = _tree(
+        tmp_path,
+        {
+            session + ".jsonl": [
+                _read_call("r1", "/shots/big.png"),
+                _read_result("r1", [_image_block(big, "image/png")]),
+            ],
+            session + "/subagents/agent-a1.jsonl": [
+                _read_call("r2", "/shots/big.png"),
+                _read_result("r2", [_image_block(big, "image/png")]),
+                _read_call("r3", "/shots/small.png"),
+                _read_result("r3", [_image_block(small, "image/png")]),
+            ],
+            "other.jsonl": [
+                _read_call("r4", "/shots/small.png"),
+                _read_result("r4", [_image_block(small, "image/png")]),
+            ],
+        },
+    )
+
+    payload = scan_images(root)
+    sessions = payload["by_session"]
+
+    assert [row["session"] for row in sessions] == [session, "other.jsonl"]
+    assert sessions[0]["files"] == 2
+    assert sessions[0]["placements"] == 3
+    assert sessions[0]["distinct_images"] == 2
+    assert sessions[0]["pixels"] == 2 * 800 * 600 + 100 * 100
+    assert sessions[0]["repeat_pixels"] == 800 * 600
+    assert sessions[0]["subagent_files"] == 1
+    assert sessions[0]["subagent_pixels"] == 800 * 600 + 100 * 100
+    assert sessions[1]["files"] == 1
+    assert sessions[1]["subagent_pixels"] == 0
+    assert payload["sessions_with_images"] == 2
+    # The per-file rows stay exactly as they were; a session row is the same
+    # placements folded by conversation, so the totals must not move.
+    assert len(payload["by_transcript"]) == 3
+    assert sum(row["pixels"] for row in sessions) == payload["pixels"]
+    assert sum(row["files"] for row in sessions) == len(payload["by_transcript"])
+
+
+def test_render_names_the_session_only_when_one_session_spans_files(tmp_path, capsys):
+    from ctxbudget.cli import main
+
+    big = _png(800, 600)
+    small = _png(100, 100)
+    session = "11111111-2222-3333-4444-555555555555"
+    split = _tree(
+        tmp_path / "split",
+        {
+            session + ".jsonl": [
+                _read_call("r1", "/shots/big.png"),
+                _read_result("r1", [_image_block(big, "image/png")]),
+            ],
+            session + "/subagents/agent-a1.jsonl": [
+                _read_call("r2", "/shots/small.png"),
+                _read_result("r2", [_image_block(small, "image/png")]),
+            ],
+        },
+    )
+    assert main(["--images", split]) == 0
+    out = capsys.readouterr().out
+
+    assert "grouped by session id" in out
+    assert session[:8] in out
+    multi_share = "%.1f%%" % 100.0
+    assert "1 session(s) hold more than one file and %s of the pixels" % multi_share in out
+    subagent_share = "%.1f%%" % (100.0 * 100 * 100 / (800 * 600 + 100 * 100))
+    assert (
+        "%s of those pixels sit in subagent transcripts (1 file(s))" % subagent_share
+        in out
+    )
+
+    plain = _tree(
+        tmp_path / "plain",
+        {
+            "a.jsonl": [
+                _read_call("r1", "/shots/big.png"),
+                _read_result("r1", [_image_block(big, "image/png")]),
+            ],
+            "b.jsonl": [
+                _read_call("r2", "/shots/small.png"),
+                _read_result("r2", [_image_block(small, "image/png")]),
+            ],
+        },
+    )
+    assert main(["--images", plain]) == 0
+    plain_out = capsys.readouterr().out
+
+    assert "transcripts that held the most pixels" in plain_out
+    assert "grouped by session id" not in plain_out

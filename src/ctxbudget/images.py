@@ -15,7 +15,24 @@ import base64
 import hashlib
 import json
 import os
+import re
 import struct
+
+# Claude Code writes a conversation to <session-id>.jsonl and its subagent
+# transcripts to <session-id>/subagents/agent-*.jsonl, so the same conversation
+# can arrive as several files.
+SESSION_ID = re.compile(
+    r"^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+)
+
+
+def session_of(relpath):
+    """The session id the path carries, or None for a file that names no session."""
+    for part in str(relpath).split(os.sep):
+        match = SESSION_ID.match(part)
+        if match:
+            return match.group(1)
+    return None
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 SOF_MARKERS = (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF)
@@ -136,6 +153,8 @@ def _empty_payload(root):
         "media_types": {},
         "by_image": {},
         "by_transcript": [],
+        "by_session": [],
+        "sessions_with_images": 0,
     }
 
 
@@ -156,6 +175,7 @@ def scan_images(root):
     compacted_digests = set()
     compacted_pixels = {}
     same_transcript_repeats = 0
+    session_rows = {}
     for current, dirs, names in os.walk(root, followlinks=False):
         dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(current, d))]
         for name in sorted(names):
@@ -278,9 +298,10 @@ def scan_images(root):
             same_transcript_repeats += sum(count - 1 for count in in_this_transcript.values())
             if has_images:
                 payload["transcripts_with_images"] += 1
+                rel = os.path.relpath(full, root)
                 payload["by_transcript"].append(
                     {
-                        "transcript": os.path.relpath(full, root),
+                        "transcript": rel,
                         "placements": transcript_placements,
                         "distinct_images": len(transcript_digest_pixels),
                         "characters": transcript_characters,
@@ -288,9 +309,58 @@ def scan_images(root):
                         "repeat_pixels": transcript_pixels - sum(transcript_digest_pixels.values()),
                     }
                 )
+                # The same placements folded by conversation. The id is the
+                # conversation's identity, so its subagent files join it even
+                # though they live in a subdirectory; a file that names no id
+                # stands alone rather than being pooled with its neighbours.
+                session = session_of(rel)
+                bucket = session_rows.setdefault(
+                    session or rel,
+                    {
+                        "session": session or rel,
+                        "project": (os.path.dirname(rel) or ".").split(os.sep)[0],
+                        "dirs": set(),
+                        "files": 0,
+                        "subagent_files": 0,
+                        "subagent_pixels": 0,
+                        "placements": 0,
+                        "characters": 0,
+                        "pixels": 0,
+                        "digests": {},
+                    },
+                )
+                bucket["dirs"].add(os.path.dirname(rel))
+                bucket["files"] += 1
+                if "subagents" in rel.split(os.sep):
+                    bucket["subagent_files"] += 1
+                    bucket["subagent_pixels"] += transcript_pixels
+                bucket["placements"] += transcript_placements
+                bucket["characters"] += transcript_characters
+                bucket["pixels"] += transcript_pixels
+                for digest, pixels in transcript_digest_pixels.items():
+                    bucket["digests"][digest] = pixels
     payload["by_transcript"] = sorted(
         payload["by_transcript"], key=lambda row: (-row["pixels"], row["transcript"])
     )
+    payload["sessions_with_images"] = len(session_rows)
+    payload["by_session"] = [
+        {
+            "session": bucket["session"],
+            "project": bucket["project"],
+            "dirs": len(bucket["dirs"]),
+            "files": bucket["files"],
+            "subagent_files": bucket["subagent_files"],
+            "subagent_pixels": bucket["subagent_pixels"],
+            "placements": bucket["placements"],
+            "distinct_images": len(bucket["digests"]),
+            "characters": bucket["characters"],
+            "pixels": bucket["pixels"],
+            "repeat_pixels": bucket["pixels"] - sum(bucket["digests"].values()),
+        }
+        for bucket in sorted(
+            session_rows.values(), key=lambda row: (-row["pixels"], row["session"])
+        )
+    ]
     payload["distinct_images"] = len(rows)
     payload["repeat_placements"] = payload["placements"] - payload["distinct_images"]
     payload["repeat_pixels"] = payload["pixels"] - sum(row["pixels"] for row in rows.values())
@@ -315,6 +385,7 @@ def scan_images(root):
 
 IMAGE_ROWS = 8
 TRANSCRIPT_ROWS = 8
+SESSION_ROWS = 8
 
 
 def _thousands(value):
@@ -427,6 +498,58 @@ def render_images_markdown(payload):
                 "- %s more transcripts with pictures"
                 % _thousands(len(by_transcript) - TRANSCRIPT_ROWS)
             )
+    by_session = payload.get("by_session") or []
+    if by_session and len(by_session) < len(by_transcript):
+        # Only worth printing when a conversation actually arrived as several
+        # files; otherwise the block repeats the file ranking row for row.
+        lines.append("")
+        lines.append(
+            "the same pixels grouped by session id (a resumed conversation writes more"
+            " than one file, so the per-file ranking splits it):"
+        )
+        for row in by_session[:SESSION_ROWS]:
+            label = str(row.get("session") or "?")
+            # A session id is long; a file that names none is shown by its name.
+            label = label[:8] if SESSION_ID.match(label) else _short(label, 14)
+            lines.append(
+                "- %-12s %2s file(s)  %4s placements  %3s pictures  %12s px  %5.1f%%"
+                % (
+                    label,
+                    _thousands(row.get("files") or 0),
+                    _thousands(row.get("placements") or 0),
+                    _thousands(row.get("distinct_images") or 0),
+                    _thousands(row.get("pixels") or 0),
+                    (100.0 * (row.get("pixels") or 0) / pixels) if pixels else 0.0,
+                )
+            )
+        if len(by_session) > SESSION_ROWS:
+            lines.append(
+                "- %s more session(s) with pictures"
+                % _thousands(len(by_session) - SESSION_ROWS)
+            )
+        multi = [row for row in by_session if (row.get("files") or 0) > 1]
+        if multi:
+            multi_pixels = sum(row.get("pixels") or 0 for row in multi)
+            lines.append(
+                "- %s session(s) hold more than one file and %s of the pixels"
+                % (
+                    _thousands(len(multi)),
+                    ("%.1f%%" % (100.0 * multi_pixels / pixels)) if pixels else "0.0%",
+                )
+            )
+            subagent_pixels = sum(row.get("subagent_pixels") or 0 for row in multi)
+            if subagent_pixels:
+                lines.append(
+                    "- %s of those pixels sit in subagent transcripts (%s file(s)); a"
+                    " subagent runs its own context, so a session row is what one"
+                    " conversation cost, not what one window held"
+                    % (
+                        "%.1f%%" % (100.0 * subagent_pixels / multi_pixels),
+                        _thousands(
+                            sum(row.get("subagent_files") or 0 for row in multi)
+                        ),
+                    )
+                )
     lines.append("")
     lines.append(
         "counted: %s base64 characters and %s pixels; characters are a bad proxy for the"

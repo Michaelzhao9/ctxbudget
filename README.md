@@ -309,6 +309,37 @@ placements of one picture — the two numbers answer different questions and are
 together. The per-transcript rows sum exactly to the reported totals, which is what makes
 the ranking safe to read.
 
+### The same pixels grouped by conversation
+
+Ranking by file answers "which transcript", but a conversation is not a file. A resumed
+session writes `<session-id>.jsonl` and then `<session-id>/subagents/agent-*.jsonl`, so one
+conversation can arrive as eight files and sit low in the per-file list. The same rows are
+therefore folded by the session id the path carries, and the block is printed only when at
+least one conversation arrived as more than one file:
+
+```
+the same pixels grouped by session id (a resumed conversation writes more than one file, so the per-file ranking splits it):
+- cbf5db94      8 file(s)   306 placements  300 pictures   324,618,838 px   13.2%
+- e938bbba      5 file(s)   206 placements  202 pictures   220,423,962 px    9.0%
+- ...
+- 63 more session(s) with pictures
+- 20 session(s) hold more than one file and 68.3% of the pixels
+- 50.4% of those pixels sit in subagent transcripts (49 file(s)); a subagent runs its own
+  context, so a session row is what one conversation cost, not what one window held
+```
+
+Measured here (120 files with pictures → 71 conversations): the heaviest single file holds
+10.1% of all image pixels and the same conversation holds 13.2% once its 8 files are joined;
+the top eight conversations hold 59.1%. A transcript whose name carries no session id is
+its own row rather than being pooled with its neighbours, so no file drops out of the fold:
+`sum(files)` over the rows equals the number of transcript rows, and the pixels in the rows
+sum to the scan total.
+
+One thing the row does not claim: a subagent transcript is a separate context window, so a
+session row is the cost filed under one conversation, not the contents of one window. That
+is why the subagent share is printed next to the fold instead of being left implicit.
+
+
 ## SQLite reclaim
 
 Dry-run is the default:
@@ -373,7 +404,7 @@ The suite covers context discovery and pricing, duplicate detection, selectors a
 - Compaction and window readers currently understand Claude Code receipt shapes.
 - Disk size labels use binary divisors; exact byte counts are included where relevant.
 - `--images` reads PNG, JPEG and GIF headers; webp and truncated payloads are reported as unknown size, and pixels are never converted to tokens because the conversion belongs to the provider.
-- `--images` ranks files, not conversations: a resumed session, or a parent plus its `subagents/` files, occupies one row per file. On this machine 120 files map to 90 sessions and the 10 multi-file sessions hold 30.2% of the pixels, so a single conversation can sit lower in the list than it deserves. Rows still sum to the totals; grouping by session id is not implemented.
+- `--images` prints two rankings: per file, and folded by the session id in the path (printed only when a conversation spans files). Grouping is by id alone, so on this machine 120 files fold to 71 conversations and 20 of them hold 68.3% of the pixels; a (directory, id) key reports 90 conversations and 10 multi-file ones, because it splits a session's main file from its `subagents/` directory. Subagent transcripts run in their own context and are still counted inside their conversation — the block states that share (50.4% here) rather than hiding it.
 - `--worktrees` reconciles only repositories reachable from the scanned path; state whose repository is outside that path is reported as unrooted, never as orphaned.
 - In `--worktrees`, the agent-state key is authoritative and the reconstructed checkout path is a hint: the encoding is not reversible when a path contains hyphens, dots, or spaces.
 
