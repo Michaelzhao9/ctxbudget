@@ -540,15 +540,17 @@ def render_images_markdown(payload):
             subagent_pixels = sum(row.get("subagent_pixels") or 0 for row in multi)
             if subagent_pixels:
                 lines.append(
-                    "- %s of those pixels sit in subagent transcripts (%s file(s)); a"
-                    " subagent runs its own context, so a session row is what one"
-                    " conversation cost, not what one window held"
+                    "- %s of those pixels sit in subagent transcripts (%s file(s))"
                     % (
                         "%.1f%%" % (100.0 * subagent_pixels / multi_pixels),
                         _thousands(
                             sum(row.get("subagent_files") or 0 for row in multi)
                         ),
                     )
+                )
+                lines.append(
+                    "  a subagent runs in its own context, so a session row is what one"
+                    " conversation cost, not what one window held"
                 )
     lines.append("")
     lines.append(
